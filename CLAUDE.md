@@ -13,6 +13,9 @@ mudanças de estrutura do repositório.
 
 Não usar travessão em texto voltado ao usuário.
 
+Commits vão direto para `main`. Não criar branch de trabalho, não abrir
+pull request e não pedir merge manual, a menos que seja pedido.
+
 ## Layout do repositório
 
 - `ARCHITECTURE.md` documento de arquitetura, fonte da verdade do projeto.
