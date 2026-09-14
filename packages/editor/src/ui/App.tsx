@@ -11,9 +11,7 @@ export function App() {
   const viewport = useRef<ViewportHandle>(null);
 
   const [brush, setBrush] = useState(1);
-  const [projection, setProjection] = useState<"perspective" | "orthographic">(
-    "perspective",
-  );
+  const [mode, setMode] = useState<"2d" | "3d">("2d");
   const [hovered, setHovered] = useState<PickedCell | null>(null);
   const [message, setMessage] = useState<string | null>(null);
 
@@ -128,10 +126,10 @@ export function App() {
         <Toolbar
           brush={brush}
           onBrush={setBrush}
-          projection={projection}
-          onProjection={(mode) => {
-            setProjection(mode);
-            viewport.current?.setProjection(mode);
+          mode={mode}
+          onMode={(next) => {
+            setMode(next);
+            viewport.current?.setMode(next);
           }}
           dirty={state.dirty}
           onSave={() =>

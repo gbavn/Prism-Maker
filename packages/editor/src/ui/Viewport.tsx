@@ -1,13 +1,18 @@
 import { useCallback, useEffect, useImperativeHandle, useRef } from "react";
 import type { OpenedMap } from "../project/loadProject.js";
 import { assetUrl } from "../shared/ipc.js";
-import { createViewport, type PickedCell, type Viewport as View } from "./viewport/scene3d.js";
+import {
+  createViewport,
+  type PickedCell,
+  type ViewMode,
+  type Viewport as View,
+} from "./viewport/scene3d.js";
 import type { BuiltScene } from "../scene/buildScene.js";
 
 export interface ViewportHandle {
   redraw: (scene: BuiltScene) => void;
   highlight: (cell: PickedCell | null) => void;
-  setProjection: (mode: "perspective" | "orthographic") => void;
+  setMode: (mode: ViewMode) => void;
 }
 
 interface Props {
@@ -74,7 +79,7 @@ export function Viewport({ map, ref, onHover, onPaint }: Props) {
         void view.show(scene, { sources: imagesOf(current) });
       },
       highlight: (cell) => viewRef.current?.highlight(cell),
-      setProjection: (mode) => viewRef.current?.setProjection(mode),
+      setMode: (mode) => viewRef.current?.setMode(mode),
     }),
     [map],
   );

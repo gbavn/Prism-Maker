@@ -1,8 +1,8 @@
 interface Props {
   brush: number;
   onBrush: (size: number) => void;
-  projection: "perspective" | "orthographic";
-  onProjection: (mode: "perspective" | "orthographic") => void;
+  mode: "2d" | "3d";
+  onMode: (mode: "2d" | "3d") => void;
   dirty: boolean;
   onSave: () => void;
 }
@@ -13,8 +13,8 @@ const buttonBase =
 export function Toolbar({
   brush,
   onBrush,
-  projection,
-  onProjection,
+  mode,
+  onMode,
   dirty,
   onSave,
 }: Props) {
@@ -38,19 +38,19 @@ export function Toolbar({
 
       <span className="mx-1 w-px bg-line" />
 
-      {(["perspective", "orthographic"] as const).map((mode) => (
+      {(["2d", "3d"] as const).map((option) => (
         <button
-          key={mode}
+          key={option}
           type="button"
-          onClick={() => onProjection(mode)}
-          aria-pressed={mode === projection}
+          onClick={() => onMode(option)}
+          aria-pressed={option === mode}
           className={`${buttonBase} ${
-            mode === projection
+            option === mode
               ? "border-accent text-accent"
               : "border-line bg-ink-600 text-body hover:bg-[#2b333f]"
           }`}
         >
-          {mode === "perspective" ? "perspectiva" : "ortográfica"}
+          {option.toUpperCase()}
         </button>
       ))}
 

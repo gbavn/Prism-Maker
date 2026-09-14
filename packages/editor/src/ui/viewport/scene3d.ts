@@ -6,6 +6,7 @@ import {
   DoubleSide,
   Mesh,
   MeshBasicMaterial,
+  MOUSE,
   NearestFilter,
   OrthographicCamera,
   PerspectiveCamera,
@@ -49,11 +50,21 @@ export interface ViewportImages {
   sources: Map<string, string>;
 }
 
+/**
+ * Modo de visualizacao.
+ *
+ * O dado de um mapa do RPG Maker e 2D, entao 2D e o padrao: camera
+ * ortografica olhando de cima, sem rotacao, que e onde da para desenhar sem
+ * lutar com a perspectiva. O 3D existe para conferir relevo, nao para editar
+ * tile.
+ */
+export type ViewMode = "2d" | "3d";
+
 export interface Viewport {
   show(scene: BuiltScene, images: ViewportImages): Promise<void>;
   pickCell(x: number, y: number): PickedCell | null;
   highlight(cell: PickedCell | null): void;
-  setProjection(mode: "perspective" | "orthographic"): void;
+  setMode(mode: ViewMode): void;
   resize(): void;
   dispose(): void;
 }
@@ -95,7 +106,8 @@ export function createViewport(canvas: HTMLCanvasElement): Viewport {
   const scene = new Scene();
   scene.add(new AmbientLight(0xffffff, 1));
 
-  let camera: Camera = new PerspectiveCamera(45, 1, 0.1, 2000);
+  let mode: ViewMode = "2d";
+  let camera: Camera = new OrthographicCamera(-10, 10, 10, -10, 0.1, 4000);
   let controls = new OrbitControls(camera, canvas);
 
   const raycaster = new Raycaster();
@@ -156,37 +168,67 @@ export function createViewport(canvas: HTMLCanvasElement): Viewport {
     }
   }
 
+  /**
+   * Meia altura visivel em 2D, em unidades de mundo.
+   *
+   * Enquadra o maior lado com uma folga pequena, e respeita o zoom que a
+   * pessoa ja aplicou: reenquadrar a cada redesenho arrancaria a camera do
+   * lugar no meio da edicao.
+   */
+  let orthoSpan = 10;
+
   function resize(): void {
     const width = canvas.clientWidth || 1;
     const height = canvas.clientHeight || 1;
     renderer.setSize(width, height, false);
+    const aspect = width / height;
 
     if (camera instanceof PerspectiveCamera) {
-      camera.aspect = width / height;
-    } else if (camera instanceof OrthographicCamera && built !== null) {
-      const span = Math.max(built.width, built.height) * built.tileSize * 0.7;
-      const aspect = width / height;
-      camera.left = -span * aspect;
-      camera.right = span * aspect;
-      camera.top = span;
-      camera.bottom = -span;
+      camera.aspect = aspect;
+    } else if (camera instanceof OrthographicCamera) {
+      camera.left = -orthoSpan * aspect;
+      camera.right = orthoSpan * aspect;
+      camera.top = orthoSpan;
+      camera.bottom = -orthoSpan;
     }
     (camera as PerspectiveCamera | OrthographicCamera).updateProjectionMatrix();
   }
 
-  function frame(target: BuiltScene): void {
-    const key = `${target.width}x${target.height}`;
-    if (framedFor === key) return;
-    framedFor = key;
-
+  function place(target: BuiltScene): void {
     const center = new Vector3(target.center.x, 0, target.center.z);
     const span = Math.max(target.width, target.height) * target.tileSize;
     controls.target.copy(center);
-    // Angulo proximo do usado nos jogos de DS: bem de cima, levemente
-    // inclinado. Enquadrar pelo maior lado deixa o mapa inteiro visivel sem
-    // precisar de zoom manual ao trocar de mapa.
-    camera.position.set(center.x, span * 1.05, center.z + span * 0.78);
+
+    if (mode === "2d") {
+      // Olhando reto para baixo. Sem rotacao: em 2D girar a camera so
+      // atrapalha, e a grade do mapa precisa ficar alinhada com a tela.
+      orthoSpan = (span / 2) * 1.08;
+      camera.position.set(center.x, span, center.z);
+      controls.enableRotate = false;
+      controls.mouseButtons = {
+        LEFT: MOUSE.PAN,
+        MIDDLE: MOUSE.DOLLY,
+        RIGHT: MOUSE.PAN,
+      };
+    } else {
+      // Angulo proximo do usado nos jogos de DS: de cima, inclinado.
+      camera.position.set(center.x, span * 1.05, center.z + span * 0.78);
+      controls.enableRotate = true;
+      controls.mouseButtons = {
+        LEFT: MOUSE.ROTATE,
+        MIDDLE: MOUSE.DOLLY,
+        RIGHT: MOUSE.PAN,
+      };
+    }
     controls.update();
+    resize();
+  }
+
+  function frame(target: BuiltScene): void {
+    const key = `${mode}:${target.width}x${target.height}`;
+    if (framedFor === key) return;
+    framedFor = key;
+    place(target);
   }
 
   async function show(next: BuiltScene, images: ViewportImages): Promise<void> {
@@ -277,22 +319,20 @@ export function createViewport(canvas: HTMLCanvasElement): Viewport {
     marker.visible = true;
   }
 
-  function setProjection(mode: "perspective" | "orthographic"): void {
-    const previous = camera;
-    const position = previous.position.clone();
-    const target = controls.target.clone();
+  function setMode(next: ViewMode): void {
+    if (next === mode) return;
+    mode = next;
 
-    camera =
-      mode === "perspective"
-        ? new PerspectiveCamera(45, 1, 0.1, 2000)
-        : new OrthographicCamera(-10, 10, 10, -10, 0.1, 2000);
-
-    camera.position.copy(position);
     controls.dispose();
+    camera =
+      next === "2d"
+        ? new OrthographicCamera(-10, 10, 10, -10, 0.1, 4000)
+        : new PerspectiveCamera(45, 1, 0.1, 4000);
     controls = new OrbitControls(camera, canvas);
-    controls.target.copy(target);
-    controls.update();
-    resize();
+
+    framedFor = "";
+    if (built !== null) frame(built);
+    else resize();
   }
 
   renderer.setAnimationLoop(() => {
@@ -304,7 +344,7 @@ export function createViewport(canvas: HTMLCanvasElement): Viewport {
     show,
     pickCell,
     highlight,
-    setProjection,
+    setMode,
     resize,
     dispose(): void {
       clear();

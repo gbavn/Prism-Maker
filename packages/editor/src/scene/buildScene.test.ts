@@ -4,7 +4,12 @@ import { describe, expect, it } from "vitest";
 import { loadMap, loadTilesets } from "@prism/rxdata-parser";
 import { parseProject } from "@prism/scene-format";
 import { buildScene } from "./buildScene.js";
-import { tileSource } from "./tileAtlas.js";
+import {
+  AUTOTILE_PATTERNS,
+  autotileQuarters,
+  quarterRect,
+  tileSource,
+} from "./tileAtlas.js";
 
 const dataDir = fileURLToPath(
   new URL("../../../../Game/essentials-v21.1/Data/", import.meta.url),
@@ -155,15 +160,19 @@ describe("paredes de degrau", () => {
 describe("recorte do tile na imagem", () => {
   it("usa 8 colunas de 32 pixels para tile normal", () => {
     // Confirmado contra Outside.png, que e 256 por 16064: 8 colunas, 502 linhas.
-    expect(tileSource(384)).toEqual({ kind: "tileset", autotile: -1, x: 0, y: 0 });
-    expect(tileSource(385)).toEqual({ kind: "tileset", autotile: -1, x: 32, y: 0 });
-    expect(tileSource(392)).toEqual({ kind: "tileset", autotile: -1, x: 0, y: 32 });
+    expect(tileSource(384)).toEqual({ kind: "tileset", x: 0, y: 0 });
+    expect(tileSource(385)).toEqual({ kind: "tileset", x: 32, y: 0 });
+    expect(tileSource(392)).toEqual({ kind: "tileset", x: 0, y: 32 });
   });
 
-  it("aponta autotile para a imagem propria", () => {
-    const source = tileSource(48);
-    expect(source?.kind).toBe("autotile");
-    expect(source?.autotile).toBe(0);
+  it("le a forma do autotile direto do tile id", () => {
+    // O RPG Maker grava a forma no id, entao nao e preciso olhar vizinhos.
+    expect(tileSource(48)).toEqual({ kind: "autotile", autotile: 0, shape: 0 });
+    expect(tileSource(48 + 20)).toEqual({
+      kind: "autotile",
+      autotile: 0,
+      shape: 20,
+    });
   });
 
   it("celula vazia nao tem recorte", () => {
@@ -173,8 +182,52 @@ describe("recorte do tile na imagem", () => {
   it("o ultimo tile de Outside cabe na imagem", () => {
     // 4400 entradas na tabela de passagem, entao o ultimo id valido e 4399.
     const source = tileSource(4399);
-    expect(source).not.toBeNull();
-    expect(source!.y + 32).toBeLessThanOrEqual(16064);
+    expect(source?.kind).toBe("tileset");
+    expect((source as { y: number }).y + 32).toBeLessThanOrEqual(16064);
+  });
+});
+
+describe("montagem do autotile", () => {
+  it("a forma cheia sai do bloco em 32, 64", () => {
+    // Quartos 27, 28, 33 e 34 da tabela do Essentials. Meu primeiro chute foi
+    // o centro do molde, em 32, 32, e o resultado era agua riscada de vermelho.
+    expect(autotileQuarters(0)).toEqual([
+      { x: 32, y: 64 },
+      { x: 48, y: 64 },
+      { x: 32, y: 80 },
+      { x: 48, y: 80 },
+    ]);
+  });
+
+  it("numera os quartos da esquerda para a direita, de cima para baixo", () => {
+    expect(quarterRect(1)).toEqual({ x: 0, y: 0 });
+    expect(quarterRect(6)).toEqual({ x: 80, y: 0 });
+    expect(quarterRect(7)).toEqual({ x: 0, y: 16 });
+    expect(quarterRect(48)).toEqual({ x: 80, y: 112 });
+  });
+
+  it("cobre as 48 formas, todas dentro do molde", () => {
+    expect(AUTOTILE_PATTERNS).toHaveLength(48);
+    for (let shape = 0; shape < 48; shape += 1) {
+      const quarters = autotileQuarters(shape);
+      expect(quarters).not.toBeNull();
+      for (const quarter of quarters!) {
+        expect(quarter.x + 16).toBeLessThanOrEqual(96);
+        expect(quarter.y + 16).toBeLessThanOrEqual(128);
+      }
+    }
+  });
+
+  it("recusa forma fora da faixa", () => {
+    expect(autotileQuarters(48)).toBeNull();
+    expect(autotileQuarters(-1)).toBeNull();
+  });
+
+  it("as formas usadas em Lappet Town sao validas", () => {
+    // Medidas no proprio Map002: autotile 4, formas 20, 28, 34, 36, 38 e 40.
+    for (const shape of [20, 28, 34, 36, 38, 40]) {
+      expect(autotileQuarters(shape)).not.toBeNull();
+    }
   });
 });
 

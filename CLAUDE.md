@@ -36,6 +36,9 @@ Monorepo com pnpm. Da raiz: `pnpm install`, depois `pnpm -r test`,
 Para abrir o editor: `pnpm --filter @prism/editor start`. Ele já abre o
 Essentials de referência do próprio repositório, sem configuração.
 
+O editor abre em **2D**, que é o modo certo para desenhar: o dado de um mapa
+do RPG Maker é 2D, e o 3D existe para conferir relevo. O botão 2D/3D troca.
+
 Elevação: clique sobe, shift mais clique desce, teclas 1 2 3 trocam o pincel,
 L nivela o bloco, ctrl+Z desfaz, ctrl+S grava o `.scene.json`.
 
@@ -57,7 +60,11 @@ Armadilhas já pagas na viewport, todas descobertas rodando o app:
   redesenho anterior ainda usava;
 - tile é plano, então levantar uma célula deixa buraco. As paredes de degrau
   (`skirts`) fecham o vão, e saem escurecidas porque material sem iluminação
-  não dá nenhuma pista de profundidade.
+  não dá nenhuma pista de profundidade;
+- autotile **não** se resolve olhando vizinhos: o RPG Maker já grava a forma
+  no próprio tile id, e basta `tileId % 48`. A montagem dos quatro quartos vem
+  da tabela `AUTOTILE_PATTERNS` do Essentials, dentro do `Scripts.rxdata`.
+  Autotile com 32 pixels de altura não tem forma, só quadros de animação.
 
 Versão alvo fixada: Essentials v21.1 (30/07/2023), a última estável.
 A v22 segue em desenvolvimento, sem data de lançamento.
