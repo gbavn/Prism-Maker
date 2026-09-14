@@ -163,6 +163,11 @@ Duas codificações, porque mapas reais são quase todos planos. Lappet Town tem
 O resto do código só lida com o resultado decodificado. O comprimento
 decodificado tem que bater com `width * height`, e o schema recusa se não bater.
 
+O editor já edita esse campo: `packages/editor` tem a ferramenta de elevação,
+com pincel, nivelamento, desfazer e gravação.
+
+![Terreno levantado no editor](editor-elevation.png)
+
 ### `cells`
 
 Exceções por célula, esparso. A chave é `"x,y"`.

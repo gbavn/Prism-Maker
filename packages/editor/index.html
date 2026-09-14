@@ -76,6 +76,37 @@
         font-size: 11px;
         white-space: pre;
       }
+      #toolbar {
+        position: absolute;
+        left: 12px;
+        top: 12px;
+        display: flex;
+        gap: 6px;
+        padding: 6px;
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        background: rgba(20, 24, 29, 0.85);
+      }
+      #toolbar button {
+        padding: 4px 10px;
+        border: 1px solid var(--line);
+        border-radius: 4px;
+        background: #222933;
+        color: var(--text);
+        font: inherit;
+        font-size: 11px;
+        cursor: pointer;
+      }
+      #toolbar button:hover { background: #2b333f; }
+      #toolbar button[aria-pressed="true"] {
+        border-color: var(--accent);
+        color: var(--accent);
+      }
+      #toolbar button.primary {
+        margin-left: 6px;
+        border-color: #3d5a7a;
+        background: #2a4058;
+      }
       #legend {
         position: absolute;
         right: 12px;
@@ -106,11 +137,13 @@
     </aside>
     <main>
       <canvas id="view"></canvas>
+      <div id="toolbar"></div>
       <div id="legend">
         <div><i style="background:#70a35c"></i> chão</div>
         <div><i style="background:#948c82"></i> bloqueado</div>
         <div><i style="background:#5285c2"></i> modelo</div>
         <div><i style="background:#e0c060"></i> evento</div>
+        <div><i style="background:#ffd94d"></i> célula sob o cursor</div>
       </div>
       <div id="status">carregando…</div>
     </main>

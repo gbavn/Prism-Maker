@@ -2,7 +2,12 @@ import { existsSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { app, BrowserWindow, dialog, ipcMain } from "electron";
-import { openMap, openProject } from "../project/loadProject.js";
+import {
+  openMap,
+  openProject,
+  rebuildScene,
+  saveElevation,
+} from "../project/loadProject.js";
 import { IPC } from "../shared/ipc.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -41,6 +46,18 @@ ipcMain.handle(IPC.openMap, (_event, root: string, id: number) =>
   openMap(root, id),
 );
 
+ipcMain.handle(
+  IPC.buildScene,
+  (_event, root: string, id: number, heights: number[]) =>
+    rebuildScene(root, id, heights),
+);
+
+ipcMain.handle(
+  IPC.saveElevation,
+  (_event, root: string, id: number, heights: number[]) =>
+    saveElevation(root, id, heights),
+);
+
 /**
  * Smoke test com imagem.
  *
@@ -56,6 +73,47 @@ if (smokeShot !== undefined) {
   app.commandLine.appendSwitch("enable-unsafe-swiftshader");
 }
 
+/**
+ * Ensaio de edicao para o smoke test.
+ *
+ * Um print de que o mapa abre nao prova que a ferramenta de elevacao
+ * funciona. Aqui o proprio Electron injeta movimento de mouse, tecla e
+ * clique, o que exercita a cadeia inteira: selecao por raio sobre thin
+ * instances, pincel, reconstrucao da cena e destaque.
+ */
+async function rehearseEditing(window: BrowserWindow): Promise<void> {
+  const send = (event: Parameters<typeof window.webContents.sendInputEvent>[0]) =>
+    window.webContents.sendInputEvent(event);
+  const wait = (ms: number) => new Promise((done) => setTimeout(done, ms));
+
+  // Pincel 5 por 5, que deixa o degrau visivel no print.
+  send({ type: "keyDown", keyCode: "3" });
+  send({ type: "keyUp", keyCode: "3" });
+  await wait(200);
+
+  const spots: [number, number][] = [
+    [700, 430],
+    [700, 430],
+    [700, 430],
+    [760, 405],
+    [760, 405],
+    [640, 455],
+  ];
+
+  for (const [x, y] of spots) {
+    send({ type: "mouseMove", x, y });
+    await wait(150);
+    send({ type: "mouseDown", x, y, button: "left", clickCount: 1 });
+    send({ type: "mouseUp", x, y, button: "left", clickCount: 1 });
+    await wait(250);
+  }
+
+  // Deixa o cursor parado sobre uma celula para o destaque aparecer.
+  send({ type: "mouseMove", x: 700, y: 430 });
+  await wait(400);
+
+}
+
 async function captureAndQuit(
   window: BrowserWindow,
   target: string,
@@ -69,6 +127,9 @@ async function captureAndQuit(
     if (ready === true) {
       // Um quadro a mais para o Babylon terminar de desenhar.
       await new Promise((done) => setTimeout(done, 1500));
+      if (process.env["PRISM_SMOKE_EDIT"] === "1") {
+        await rehearseEditing(window);
+      }
       const image = await window.webContents.capturePage();
       writeFileSync(target, image.toPNG());
       app.exit(0);

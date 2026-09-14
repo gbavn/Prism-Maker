@@ -1,8 +1,6 @@
 import type { RPGMap, RPGTileset } from "@prism/rxdata-parser";
 import {
-  decodeElevation,
   resolveTileRender,
-  type Elevation,
   type Project,
   type TileRender,
   type TilesetMapping,
@@ -25,6 +23,9 @@ import {
 export interface SceneBox {
   x: number;
   z: number;
+  /** Celula de origem na grade do mapa, para a selecao saber o que foi clicado. */
+  cellX: number;
+  cellY: number;
   /** Altura da base, ja multiplicada pelo passo de elevacao. */
   base: number;
   height: number;
@@ -97,8 +98,13 @@ export interface BuildSceneInput {
   map: RPGMap;
   tileset: RPGTileset;
   project: Project;
-  /** Elevacao do .scene.json. Ausente significa mapa plano. */
-  elevation?: Elevation;
+  /**
+   * Altura de cada celula em degraus, ja decodificada. Ausente significa mapa
+   * plano. Recebe o array pronto em vez do Elevation do .scene.json porque a
+   * ferramenta de elevacao reconstroi a cena a cada clique, e reencodar RLE
+   * nesse caminho seria trabalho jogado fora.
+   */
+  heights?: readonly number[];
 }
 
 export function buildScene(input: BuildSceneInput): BuiltScene {
@@ -106,9 +112,8 @@ export function buildScene(input: BuildSceneInput): BuiltScene {
   const { tileSize, elevationStep } = project.units;
   const mapping = project.tilesets[String(map.tilesetId)] ?? emptyMapping();
 
-  const heights = input.elevation
-    ? decodeElevation(input.elevation)
-    : new Array<number>(map.width * map.height).fill(0);
+  const heights =
+    input.heights ?? new Array<number>(map.width * map.height).fill(0);
 
   if (heights.length !== map.width * map.height) {
     throw new Error(
@@ -145,6 +150,8 @@ export function buildScene(input: BuildSceneInput): BuiltScene {
       boxes.push({
         x: x * tileSize,
         z: y * tileSize,
+        cellX: x,
+        cellY: y,
         base,
         height,
         kind: render.kind,

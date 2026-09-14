@@ -9,6 +9,10 @@ import { Mesh } from "@babylonjs/core/Meshes/mesh";
 import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
 import { Scene } from "@babylonjs/core/scene";
 import "@babylonjs/core/Meshes/thinInstanceMesh";
+// Import de efeito colateral, obrigatorio com import seletivo do Babylon: sem
+// ele scene.pick existe mas devolve vazio em qualquer ponto da tela, porque a
+// maquinaria de raio nunca e registrada.
+import "@babylonjs/core/Culling/ray";
 
 import type { BuiltScene, SceneBox } from "../scene/buildScene.js";
 
@@ -33,6 +37,10 @@ function fillInstances(mesh: Mesh, boxes: SceneBox[], tileSize: number): void {
     ).copyToArray(matrices, index * 16);
   });
   mesh.thinInstanceSetBuffer("matrix", matrices, 16);
+  // Sem isso a malha mantem o bounding box da caixa base, na origem, e o raio
+  // de selecao erra quase todas as instancias. O sintoma e enganoso: a cena
+  // desenha certo e so a selecao falha.
+  mesh.thinInstanceRefreshBoundingInfo(true);
 }
 
 function solidMaterial(
@@ -47,8 +55,21 @@ function solidMaterial(
   return material;
 }
 
+/** Celula sob o cursor, em coordenadas da grade do mapa. */
+export interface PickedCell {
+  x: number;
+  y: number;
+}
+
 export interface Viewer {
   show(built: BuiltScene): void;
+  /**
+   * Celula sob o ponto dado, em pixels do canvas. Sem argumento usa a posicao
+   * corrente do ponteiro.
+   */
+  pickCell(x?: number, y?: number): PickedCell | null;
+  /** Destaca uma celula, ou limpa o destaque com null. */
+  highlight(cell: PickedCell | null): void;
   dispose(): void;
 }
 
@@ -80,14 +101,18 @@ export function createViewer(canvas: HTMLCanvasElement, tileSize = 1): Viewer {
   sun.intensity = 0.55;
 
   let created: Mesh[] = [];
+  /** Por malha, a lista de caixas na mesma ordem das thin instances. */
+  const pickIndex = new Map<string, SceneBox[]>();
 
   function clear(): void {
     for (const mesh of created) mesh.dispose();
     created = [];
+    pickIndex.clear();
   }
 
   function show(built: BuiltScene): void {
     clear();
+    lastBuilt = built;
 
     const byKind = new Map<string, SceneBox[]>();
     for (const box of built.boxes) {
@@ -101,7 +126,10 @@ export function createViewer(canvas: HTMLCanvasElement, tileSize = 1): Viewer {
       if (first === undefined) continue;
       const mesh = CreateBox(`tiles-${kind}`, { size: 1 }, scene);
       mesh.material = solidMaterial(scene, `mat-${kind}`, first.color);
+      // Sem isso o clique atravessa as instancias e nada e selecionavel.
+      mesh.thinInstanceEnablePicking = true;
       fillInstances(mesh, boxes, tileSize);
+      pickIndex.set(mesh.name, boxes);
       created.push(mesh);
     }
 
@@ -129,8 +157,67 @@ export function createViewer(canvas: HTMLCanvasElement, tileSize = 1): Viewer {
       }
     }
 
-    camera.setTarget(new Vector3(built.center.x, 0, built.center.z));
-    camera.radius = Math.max(built.width, built.height) * tileSize * 1.1;
+    if (framedFor !== builtKey(built)) {
+      // Reenquadra so quando o mapa muda. Reenquadrar a cada pincelada
+      // arrancaria a camera do lugar no meio da edicao.
+      framedFor = builtKey(built);
+      camera.setTarget(new Vector3(built.center.x, 0, built.center.z));
+      camera.radius = Math.max(built.width, built.height) * tileSize * 1.1;
+    }
+  }
+
+  /**
+   * Caixa de destaque.
+   *
+   * Vive fora da lista de descarte porque sobrevive a troca de mapa, e fica
+   * um pouco maior que a celula para nao brigar com o bloco por z-fighting.
+   */
+  const marker = CreateBox("highlight", { size: 1 }, scene);
+  const markerMaterial = new StandardMaterial("mat-highlight", scene);
+  markerMaterial.diffuseColor = new Color3(1, 0.85, 0.3);
+  markerMaterial.emissiveColor = new Color3(0.5, 0.4, 0.1);
+  markerMaterial.specularColor = Color3.Black();
+  markerMaterial.alpha = 0.45;
+  marker.material = markerMaterial;
+  marker.isPickable = false;
+  marker.setEnabled(false);
+
+  let lastBuilt: BuiltScene | null = null;
+  let framedFor = "";
+
+  const builtKey = (built: BuiltScene): string =>
+    `${built.width}x${built.height}@${built.center.x},${built.center.z}`;
+
+  function boxAt(cell: PickedCell): SceneBox | undefined {
+    return lastBuilt?.boxes.find(
+      (box) => box.cellX === cell.x && box.cellY === cell.y,
+    );
+  }
+
+  function pickCell(x?: number, y?: number): PickedCell | null {
+    const hit = scene.pick(x ?? scene.pointerX, y ?? scene.pointerY, (mesh) =>
+      pickIndex.has(mesh.name),
+    );
+    if (!hit?.hit || hit.pickedMesh === null) return null;
+
+    const boxes = pickIndex.get(hit.pickedMesh.name);
+    const box = boxes?.[hit.thinInstanceIndex];
+    return box ? { x: box.cellX, y: box.cellY } : null;
+  }
+
+  function highlight(cell: PickedCell | null): void {
+    if (cell === null) {
+      marker.setEnabled(false);
+      return;
+    }
+    const box = boxAt(cell);
+    if (box === undefined) {
+      marker.setEnabled(false);
+      return;
+    }
+    marker.scaling.set(tileSize * 1.04, box.height + 0.04, tileSize * 1.04);
+    marker.position.set(box.x, box.base + box.height / 2, box.z);
+    marker.setEnabled(true);
   }
 
   engine.runRenderLoop(() => scene.render());
@@ -138,6 +225,8 @@ export function createViewer(canvas: HTMLCanvasElement, tileSize = 1): Viewer {
 
   return {
     show,
+    pickCell,
+    highlight,
     dispose(): void {
       clear();
       engine.dispose();

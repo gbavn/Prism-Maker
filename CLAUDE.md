@@ -36,10 +36,21 @@ Monorepo com pnpm. Da raiz: `pnpm install`, depois `pnpm -r test`,
 Para abrir o editor: `pnpm --filter @prism/editor start`. Ele já abre o
 Essentials de referência do próprio repositório, sem configuração.
 
+Elevação: clique sobe, shift mais clique desce, teclas 1 2 3 trocam o pincel,
+L nivela o bloco, ctrl+Z desfaz, ctrl+S grava o `.scene.json`.
+
 Para provar que o editor renderiza sem ter tela, existe um smoke test com
 imagem: `PRISM_SMOKE_SHOT=/caminho/saida.png` faz o app subir, esperar a
 primeira cena e salvar um PNG antes de sair. Em máquina sem monitor, rodar
-com `xvfb-run`.
+com `xvfb-run`. Com `PRISM_SMOKE_EDIT=1` junto, o próprio Electron injeta
+mouse e teclado e levanta terreno antes do print, o que exercita seleção,
+pincel e reconstrução da cena.
+
+Duas armadilhas do Babylon com import seletivo, já pagas uma vez:
+`@babylonjs/core/Culling/ray` precisa ser importado por efeito colateral ou
+`scene.pick` devolve vazio em qualquer ponto da tela, e depois de preencher um
+buffer de thin instances é obrigatório chamar `thinInstanceRefreshBoundingInfo`
+ou o raio erra as instâncias.
 
 Versão alvo fixada: Essentials v21.1 (30/07/2023), a última estável.
 A v22 segue em desenvolvimento, sem data de lançamento.

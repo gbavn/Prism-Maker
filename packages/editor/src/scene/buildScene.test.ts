@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { loadMap, loadTilesets } from "@prism/rxdata-parser";
-import { flatElevation, parseProject } from "@prism/scene-format";
+import { parseProject } from "@prism/scene-format";
 import { buildScene, PLACEHOLDER_COLORS } from "./buildScene.js";
 
 const dataDir = fileURLToPath(
@@ -16,14 +16,9 @@ function read(name: string): Uint8Array {
 const tilesets = loadTilesets(read("Tilesets.rxdata"));
 const project = parseProject({ formatVersion: 1 });
 
-function scene(file: string, elevation?: ReturnType<typeof flatElevation>) {
+function scene(file: string) {
   const map = loadMap(read(file));
-  return buildScene({
-    map,
-    tileset: tilesets.get(map.tilesetId)!,
-    project,
-    ...(elevation ? { elevation } : {}),
-  });
+  return buildScene({ map, tileset: tilesets.get(map.tilesetId)!, project });
 }
 
 describe("construcao da cena a partir de um mapa real", () => {
@@ -90,7 +85,7 @@ describe("elevacao", () => {
       map,
       tileset: tilesets.get(map.tilesetId)!,
       project,
-      elevation: flatElevation(32, 21, 2),
+      heights: new Array<number>(32 * 21).fill(2),
     });
     // O passo padrao e 0.5, entao dois degraus levantam uma unidade.
     expect(raised.boxes.every((box) => box.base === 1)).toBe(true);
@@ -103,7 +98,7 @@ describe("elevacao", () => {
         map,
         tileset: tilesets.get(map.tilesetId)!,
         project,
-        elevation: flatElevation(10, 10),
+        heights: new Array<number>(100).fill(0),
       }),
     ).toThrow(/100 celulas.*32x21/);
   });
