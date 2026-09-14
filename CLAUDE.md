@@ -21,7 +21,8 @@ pull request e não pedir merge manual, a menos que seja pedido.
 - `ARCHITECTURE.md` documento de arquitetura, fonte da verdade do projeto.
 - `docs/scene-format.md` especificação do contrato entre editor e runtime.
 - `packages/scene-format/` schema, validação e tipos compartilhados.
-- `packages/rxdata-parser/` leitura de `.rxdata` (Ruby Marshal 4.8) em TS.
+- `packages/rxdata-parser/` leitura e escrita de `.rxdata` (Ruby Marshal 4.8).
+- `packages/editor/` editor em Electron mais Babylon.js.
 - `tools/` scripts auxiliares que rodam fora do CI, como o gerador da
   referência de teste em Ruby.
 - `examples/` cena e manifesto de exemplo, validados por teste.
@@ -31,6 +32,14 @@ pull request e não pedir merge manual, a menos que seja pedido.
 
 Monorepo com pnpm. Da raiz: `pnpm install`, depois `pnpm -r test`,
 `pnpm -r typecheck` e `pnpm -r build`.
+
+Para abrir o editor: `pnpm --filter @prism/editor start`. Ele já abre o
+Essentials de referência do próprio repositório, sem configuração.
+
+Para provar que o editor renderiza sem ter tela, existe um smoke test com
+imagem: `PRISM_SMOKE_SHOT=/caminho/saida.png` faz o app subir, esperar a
+primeira cena e salvar um PNG antes de sair. Em máquina sem monitor, rodar
+com `xvfb-run`.
 
 Versão alvo fixada: Essentials v21.1 (30/07/2023), a última estável.
 A v22 segue em desenvolvimento, sem data de lançamento.

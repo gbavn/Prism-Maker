@@ -70,6 +70,15 @@ Zero é nível do chão. Acima de zero o tile é desenhado por cima do personage
 o que na prática marca geometria alta: copa de árvore, telhado, beiral. Em 2.5D
 isso é um bom palpite inicial de altura, e é exatamente como o formato usa.
 
+### Onde isso aparece na tela
+
+![Lappet Town renderizada pelo editor](editor-lappet-town.png)
+
+O editor em `packages/editor` já monta a cena a partir destas regras, com
+blocos placeholder coloridos por tipo. A tradução de mapa para geometria vive
+em `buildScene`, que é pura e sem Babylon, justamente para o runtime em C++
+poder ser comparado contra ela depois.
+
 ### Onde ler isso tudo
 
 O pacote `@prism/rxdata-parser` le e escreve `.rxdata` sem depender de Ruby

@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <title>Prism</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #14181d;
+        --panel: #1c2128;
+        --line: #2b323c;
+        --text: #d8dee6;
+        --muted: #8a94a3;
+        --accent: #6fa8dc;
+      }
+      * { box-sizing: border-box; }
+      html, body { height: 100%; margin: 0; }
+      body {
+        display: grid;
+        grid-template-columns: 260px 1fr;
+        background: var(--bg);
+        color: var(--text);
+        font: 13px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+      }
+      aside {
+        border-right: 1px solid var(--line);
+        background: var(--panel);
+        display: flex;
+        flex-direction: column;
+        min-height: 0;
+      }
+      aside header {
+        padding: 14px 16px;
+        border-bottom: 1px solid var(--line);
+      }
+      aside header h1 {
+        margin: 0;
+        font-size: 15px;
+        letter-spacing: 0.04em;
+      }
+      aside header p {
+        margin: 2px 0 0;
+        color: var(--muted);
+        font-size: 11px;
+      }
+      #maps { overflow-y: auto; flex: 1; padding: 6px 0; }
+      #maps button {
+        display: block;
+        width: 100%;
+        text-align: left;
+        padding: 6px 16px;
+        border: 0;
+        background: none;
+        color: var(--text);
+        font: inherit;
+        cursor: pointer;
+      }
+      #maps button:hover { background: #242b34; }
+      #maps button[aria-current="true"] {
+        background: #263445;
+        color: var(--accent);
+        box-shadow: inset 2px 0 0 var(--accent);
+      }
+      #maps button span { color: var(--muted); margin-right: 8px; }
+      main { position: relative; min-width: 0; }
+      canvas { display: block; width: 100%; height: 100%; outline: none; }
+      #status {
+        position: absolute;
+        left: 12px;
+        bottom: 12px;
+        padding: 6px 10px;
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        background: rgba(20, 24, 29, 0.85);
+        color: var(--muted);
+        font-size: 11px;
+        white-space: pre;
+      }
+      #legend {
+        position: absolute;
+        right: 12px;
+        top: 12px;
+        padding: 8px 10px;
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        background: rgba(20, 24, 29, 0.85);
+        font-size: 11px;
+      }
+      #legend div { display: flex; align-items: center; gap: 7px; }
+      #legend div + div { margin-top: 4px; }
+      #legend i {
+        width: 10px;
+        height: 10px;
+        border-radius: 2px;
+        display: inline-block;
+      }
+    </style>
+  </head>
+  <body>
+    <aside>
+      <header>
+        <h1>Prism</h1>
+        <p>Editor de mundo 2.5D</p>
+      </header>
+      <nav id="maps"></nav>
+    </aside>
+    <main>
+      <canvas id="view"></canvas>
+      <div id="legend">
+        <div><i style="background:#70a35c"></i> chão</div>
+        <div><i style="background:#948c82"></i> bloqueado</div>
+        <div><i style="background:#5285c2"></i> modelo</div>
+        <div><i style="background:#e0c060"></i> evento</div>
+      </div>
+      <div id="status">carregando…</div>
+    </main>
+    <script type="module" src="/src/renderer/main.ts"></script>
+  </body>
+</html>

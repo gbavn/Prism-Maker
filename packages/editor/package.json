@@ -1,0 +1,23 @@
+{
+  "name": "@prism/editor",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "dist/main/main.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.main.json && esbuild src/main/preload.ts --bundle --platform=node --format=cjs --external:electron --outfile=dist/main/preload.cjs && vite build",
+    "typecheck": "tsc -p tsconfig.main.json --noEmit && tsc -p tsconfig.renderer.json --noEmit",
+    "test": "vitest run",
+    "start": "pnpm build && electron ."
+  },
+  "dependencies": {
+    "@prism/rxdata-parser": "workspace:*",
+    "@prism/scene-format": "workspace:*"
+  },
+  "devDependencies": {
+    "@babylonjs/core": "^7.54.0",
+    "electron": "^33.2.1",
+    "esbuild": "^0.24.2",
+    "vite": "^6.0.7"
+  }
+}
