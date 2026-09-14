@@ -16,9 +16,9 @@ Não usar travessão em texto voltado ao usuário.
 ## Layout do repositório
 
 - `ARCHITECTURE.md` documento de arquitetura, fonte da verdade do projeto.
-- `Game/Pokemon Essentials v21.1 2023-07-30/Pokemon Essentials v21.1 2023-07-30/`
-  projeto Pokémon Essentials v21.1 completo, usado como referência e fixture
-  de teste. Código de terceiro, licença CC BY-NC-SA 4.0. Não editar.
+- `Game/essentials-v21.1/` projeto Pokémon Essentials v21.1 completo, usado
+  como referência e fixture de teste. Código de terceiro, licença
+  CC BY-NC-SA 4.0. Não editar.
 
 Versão alvo fixada: Essentials v21.1 (30/07/2023), a última estável.
 A v22 segue em desenvolvimento, sem data de lançamento.
