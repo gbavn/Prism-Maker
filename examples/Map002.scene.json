@@ -1,0 +1,70 @@
+{
+  "formatVersion": 1,
+  "map": {
+    "id": 2,
+    "width": 32,
+    "height": 21,
+    "tilesetId": 1
+  },
+  "elevation": {
+    "encoding": "rle",
+    "data": [
+      [100, 0],
+      [6, 2],
+      [26, 0],
+      [6, 2],
+      [26, 0],
+      [6, 2],
+      [26, 0],
+      [6, 2],
+      [470, 0]
+    ]
+  },
+  "cells": {
+    "9,3": {
+      "ramp": {
+        "direction": "east",
+        "to": 2
+      }
+    },
+    "9,4": {
+      "ramp": {
+        "direction": "east",
+        "to": 2
+      }
+    },
+    "12,10": {
+      "collision": "solid"
+    }
+  },
+  "camera": {
+    "yaw": 0,
+    "pitch": 58,
+    "distance": 14,
+    "projection": "perspective",
+    "rotation": "steps",
+    "zoom": {
+      "min": 8,
+      "max": 22
+    }
+  },
+  "events": {
+    "1": {
+      "render": "billboard"
+    },
+    "2": {
+      "render": "billboard",
+      "elevationOffset": 2
+    },
+    "3": {
+      "render": "model",
+      "model": {
+        "path": "props/sign.glb",
+        "rotation": 180
+      }
+    },
+    "4": {
+      "render": "hidden"
+    }
+  }
+}

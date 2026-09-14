@@ -1,0 +1,79 @@
+{
+  "formatVersion": 1,
+  "essentialsVersion": "21.1",
+  "units": {
+    "tileSize": 1,
+    "elevationStep": 0.5
+  },
+  "camera": {
+    "yaw": 0,
+    "pitch": 55,
+    "distance": 12,
+    "rotation": "steps"
+  },
+  "tilesets": {
+    "1": {
+      "name": "Outside",
+      "derive": {
+        "passable": {
+          "kind": "ground"
+        },
+        "impassable": {
+          "kind": "block",
+          "height": 1
+        },
+        "overhead": {
+          "kind": "block",
+          "height": 2
+        }
+      },
+      "autotiles": {
+        "0": {
+          "kind": "model",
+          "model": {
+            "path": "water/sea.glb"
+          }
+        },
+        "1": {
+          "kind": "model",
+          "model": {
+            "path": "water/sea.glb"
+          }
+        },
+        "2": {
+          "kind": "model",
+          "model": {
+            "path": "water/sea-deep.glb"
+          }
+        },
+        "3": {
+          "kind": "ground"
+        },
+        "4": {
+          "kind": "ground"
+        }
+      },
+      "tiles": {
+        "401": {
+          "kind": "ground"
+        }
+      }
+    },
+    "4": {
+      "name": "Poke Center",
+      "derive": {
+        "passable": {
+          "kind": "ground"
+        },
+        "impassable": {
+          "kind": "block",
+          "height": 1
+        },
+        "overhead": {
+          "kind": "block",
+          "height": 2
+        }
+      }
+    }
+  }
+}
