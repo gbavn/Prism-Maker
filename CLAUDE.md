@@ -21,6 +21,9 @@ pull request e não pedir merge manual, a menos que seja pedido.
 - `ARCHITECTURE.md` documento de arquitetura, fonte da verdade do projeto.
 - `docs/scene-format.md` especificação do contrato entre editor e runtime.
 - `packages/scene-format/` schema, validação e tipos compartilhados.
+- `packages/rxdata-parser/` leitura de `.rxdata` (Ruby Marshal 4.8) em TS.
+- `tools/` scripts auxiliares que rodam fora do CI, como o gerador da
+  referência de teste em Ruby.
 - `examples/` cena e manifesto de exemplo, validados por teste.
 - `Game/essentials-v21.1/` projeto Pokémon Essentials v21.1 completo, usado
   como referência e fixture de teste. Código de terceiro, licença
