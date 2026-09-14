@@ -3,7 +3,15 @@
   "compilerOptions": {
     "noEmit": true,
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "jsx": "react-jsx",
     "types": []
   },
-  "include": ["src/renderer/**/*.ts", "src/scene/**/*.ts", "src/shared/**/*.ts", "src/project/**/*.ts", "vite.config.ts"]
+  "include": [
+    "src/ui/**/*.ts",
+    "src/ui/**/*.tsx",
+    "src/scene/**/*.ts",
+    "src/shared/**/*.ts",
+    "src/project/**/*.ts",
+    "vite.config.ts"
+  ]
 }

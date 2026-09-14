@@ -52,7 +52,7 @@ describe("abrir mapa sem .scene.json", () => {
     expect(opened.grid).toEqual({ width: 32, height: 21 });
     expect(opened.heights).toHaveLength(32 * 21);
     expect(opened.heights.every((step) => step === 0)).toBe(true);
-    expect(opened.scene.boxes.length).toBeGreaterThan(0);
+    expect(opened.scene.quads.length).toBeGreaterThan(0);
   });
 });
 
@@ -70,10 +70,7 @@ describe("gravar elevacao", () => {
     const reopened = openMap(root, 2);
     expect(reopened.heights).toEqual(heights);
     // A geometria tem que refletir a altura: passo padrao 0.5.
-    const corner = reopened.scene.boxes.find(
-      (box) => box.cellX === 0 && box.cellY === 0,
-    );
-    expect(corner?.base).toBe(1.5);
+    expect(reopened.scene.surface[0]).toBe(1.5);
   });
 
   it("escreve ao lado do .rxdata, sem toca-lo", () => {

@@ -22,7 +22,7 @@ pull request e não pedir merge manual, a menos que seja pedido.
 - `docs/scene-format.md` especificação do contrato entre editor e runtime.
 - `packages/scene-format/` schema, validação e tipos compartilhados.
 - `packages/rxdata-parser/` leitura e escrita de `.rxdata` (Ruby Marshal 4.8).
-- `packages/editor/` editor em Electron mais Babylon.js.
+- `packages/editor/` editor em Electron, React, Tailwind e Three.js.
 - `tools/` scripts auxiliares que rodam fora do CI, como o gerador da
   referência de teste em Ruby.
 - `examples/` cena e manifesto de exemplo, validados por teste.
@@ -46,11 +46,18 @@ com `xvfb-run`. Com `PRISM_SMOKE_EDIT=1` junto, o próprio Electron injeta
 mouse e teclado e levanta terreno antes do print, o que exercita seleção,
 pincel e reconstrução da cena.
 
-Duas armadilhas do Babylon com import seletivo, já pagas uma vez:
-`@babylonjs/core/Culling/ray` precisa ser importado por efeito colateral ou
-`scene.pick` devolve vazio em qualquer ponto da tela, e depois de preencher um
-buffer de thin instances é obrigatório chamar `thinInstanceRefreshBoundingInfo`
-ou o raio erra as instâncias.
+Armadilhas já pagas na viewport, todas descobertas rodando o app:
+
+- textura de tileset precisa de `colorSpace = SRGBColorSpace`, senão o Three
+  a trata como linear e clareia o mapa inteiro;
+- `magFilter` e `minFilter` em `NearestFilter`, senão o pixel art borra e puxa
+  cor do tile vizinho no atlas;
+- texturas ficam em cache vivo enquanto a viewport existir. Recarregar a cada
+  redesenho cria corrida: a pincelada seguinte descarta a textura que o
+  redesenho anterior ainda usava;
+- tile é plano, então levantar uma célula deixa buraco. As paredes de degrau
+  (`skirts`) fecham o vão, e saem escurecidas porque material sem iluminação
+  não dá nenhuma pista de profundidade.
 
 Versão alvo fixada: Essentials v21.1 (30/07/2023), a última estável.
 A v22 segue em desenvolvimento, sem data de lançamento.

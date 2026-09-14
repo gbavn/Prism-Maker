@@ -1,37 +1,29 @@
 import type { RPGMap, RPGTileset } from "@prism/rxdata-parser";
-import {
-  resolveTileRender,
-  type Project,
-  type TileRender,
-  type TilesetMapping,
-} from "@prism/scene-format";
+import { MAP_LAYERS, tileKind, type Project } from "@prism/scene-format";
 
 /**
- * Traducao de um mapa do RPG Maker para instancias 3D.
+ * Traducao de um mapa do RPG Maker para o que a viewport desenha.
  *
- * Esta funcao e deliberadamente pura e sem Babylon: recebe o mapa lido do
- * .rxdata mais o contrato do scene-format, devolve uma lista de caixas e
- * billboards. Assim o coracao do editor tem teste automatizado de verdade,
- * em vez de depender de alguem abrir a janela e olhar.
+ * A abordagem mudou depois de ver um editor de referencia em uso: em vez de
+ * derivar geometria a partir da tabela de passagem, a viewport desenha os
+ * proprios tiles do tileset em perspectiva, e o relevo vem da elevacao por
+ * celula. O resultado parece um mapa de Pokemon em vez de uma visualizacao de
+ * depuracao, e usa menos regra inventada.
  *
- * E e tambem o que o runtime em C++ vai precisar reimplementar identico. Ter
- * isso isolado torna a divergencia entre editor e runtime uma coisa que da
- * para comparar, em vez de uma suspeita.
+ * A funcao segue pura e sem motor 3D, pelo mesmo motivo de antes: e o que o
+ * runtime em C++ vai precisar reimplementar identico, e o que permite testar
+ * sem abrir janela.
  */
 
-/** Uma caixa no mundo. Posicao e o centro da base, em unidades de mundo. */
-export interface SceneBox {
-  x: number;
-  z: number;
-  /** Celula de origem na grade do mapa, para a selecao saber o que foi clicado. */
+/** Um tile desenhado no mundo, ja com a altura resolvida. */
+export interface TileQuad {
   cellX: number;
   cellY: number;
-  /** Altura da base, ja multiplicada pelo passo de elevacao. */
-  base: number;
-  height: number;
-  kind: TileRender["kind"];
-  /** Cor placeholder, ate existirem modelos de verdade. */
-  color: [number, number, number];
+  /** Camada do RPG Maker, de 0 a 2. */
+  layer: number;
+  tileId: number;
+  /** Altura do quad em unidades de mundo. */
+  y: number;
 }
 
 /** Um evento posicionado no mundo, desenhado como billboard. */
@@ -42,75 +34,65 @@ export interface SceneBillboard {
   z: number;
   base: number;
   height: number;
+  /** Nome do charset, vazio quando o evento nao tem grafico. */
+  characterName: string;
+}
+
+/**
+ * Parede lateral de um degrau.
+ *
+ * Um tile e um plano sem espessura. Quando uma celula sobe, o plano sobe junto
+ * e deixa o lugar dele vazio, o que aparece como um buraco preto no mapa. A
+ * saia fecha esse vao entre a celula e o vizinho mais baixo.
+ *
+ * A textura e a do proprio tile da celula, esticada na vertical. Nao e o que
+ * um penhasco de verdade deveria mostrar, mas le como parede e nao inventa
+ * arte que nao existe. Tile de penhasco proprio vem junto com o mapeamento
+ * para modelos.
+ */
+export interface SkirtQuad {
+  cellX: number;
+  cellY: number;
+  side: "north" | "south" | "east" | "west";
+  tileId: number;
+  /** Alturas em unidades de mundo, com top sempre acima de bottom. */
+  top: number;
+  bottom: number;
 }
 
 export interface BuiltScene {
   width: number;
   height: number;
-  boxes: SceneBox[];
+  tileSize: number;
+  elevationStep: number;
+  quads: TileQuad[];
+  skirts: SkirtQuad[];
   billboards: SceneBillboard[];
-  /** Centro do mapa, para a camera mirar. */
+  /** Altura do topo de cada celula, para o destaque e para assentar eventos. */
+  surface: number[];
   center: { x: number; z: number };
 }
 
 /**
- * Cores placeholder por tipo de geometria.
+ * Separacao vertical entre camadas.
  *
- * O ARCHITECTURE.md e explicito: um cubo colorido aparecendo numa cena
- * navegavel vale mais, no inicio, do que arte perfeita. Estas cores existem
- * para serem substituidas por modelos glTF.
+ * As tres camadas do XP ocupam a mesma celula. Sem um deslocamento minimo elas
+ * disputam o mesmo plano e o resultado cintila conforme a camera se move. O
+ * valor e pequeno o bastante para nao ler como degrau.
  */
-export const PLACEHOLDER_COLORS: Record<TileRender["kind"], [number, number, number]> = {
-  ground: [0.44, 0.64, 0.36],
-  block: [0.58, 0.55, 0.51],
-  model: [0.32, 0.52, 0.76],
-  hidden: [0, 0, 0],
-};
-
-/**
- * Escolhe o tile que representa a celula.
- *
- * O Essentials varre as camadas de cima para baixo, `[2, 1, 0]`, e para no
- * primeiro tile preenchido. O editor faz igual, senao a celula apareceria com
- * o chao por cima do telhado.
- */
-function topmostTile(map: RPGMap, x: number, y: number): number {
-  for (const layer of [2, 1, 0]) {
-    const tileId = map.data.at(x, y, layer);
-    if (tileId !== 0) return tileId;
-  }
-  return 0;
-}
-
-function emptyMapping(): TilesetMapping {
-  return {
-    derive: {
-      passable: { kind: "ground" },
-      impassable: { kind: "block", height: 1 },
-      overhead: { kind: "block", height: 2 },
-    },
-    autotiles: {},
-    tiles: {},
-  };
-}
+const LAYER_GAP = 0.004;
 
 export interface BuildSceneInput {
   map: RPGMap;
   tileset: RPGTileset;
   project: Project;
-  /**
-   * Altura de cada celula em degraus, ja decodificada. Ausente significa mapa
-   * plano. Recebe o array pronto em vez do Elevation do .scene.json porque a
-   * ferramenta de elevacao reconstroi a cena a cada clique, e reencodar RLE
-   * nesse caminho seria trabalho jogado fora.
-   */
+  /** Altura de cada celula em degraus. Ausente significa mapa plano. */
   heights?: readonly number[];
 }
 
 export function buildScene(input: BuildSceneInput): BuiltScene {
-  const { map, tileset, project } = input;
+  const { map, project } = input;
   const { tileSize, elevationStep } = project.units;
-  const mapping = project.tilesets[String(map.tilesetId)] ?? emptyMapping();
 
   const heights =
     input.heights ?? new Array<number>(map.width * map.height).fill(0);
@@ -122,68 +104,89 @@ export function buildScene(input: BuildSceneInput): BuiltScene {
     );
   }
 
-  const boxes: SceneBox[] = [];
-  /** Altura do topo da geometria de cada celula, para assentar os eventos. */
-  const surface = new Float64Array(map.width * map.height);
+  const quads: TileQuad[] = [];
+  const surface = new Array<number>(map.width * map.height).fill(0);
 
   for (let y = 0; y < map.height; y += 1) {
     for (let x = 0; x < map.width; x += 1) {
-      const tileId = topmostTile(map, x, y);
-      if (tileId === 0) continue;
-
-      const render = resolveTileRender(mapping, tileId, {
-        passage: tileset.passages.data[tileId] ?? 0,
-        priority: tileset.priorities.data[tileId] ?? 0,
-      });
-      if (render === null || render.kind === "hidden") continue;
-
       const index = y * map.width + x;
-      const step = heights[index] ?? 0;
-      // Um plano de chao ainda precisa de espessura para aparecer em 3D; meio
-      // degrau da relevo visivel sem falsear a altura da celula.
-      const height =
-        render.kind === "block" ? render.height * elevationStep : elevationStep / 2;
+      const base = (heights[index] ?? 0) * elevationStep;
+      surface[index] = base;
 
-      const base = step * elevationStep;
-      surface[index] = base + height;
+      for (let layer = 0; layer < MAP_LAYERS; layer += 1) {
+        const tileId = map.data.at(x, y, layer);
+        if (tileKind(tileId) === "empty") continue;
 
-      boxes.push({
-        x: x * tileSize,
-        z: y * tileSize,
-        cellX: x,
-        cellY: y,
-        base,
-        height,
-        kind: render.kind,
-        color: PLACEHOLDER_COLORS[render.kind],
-      });
+        quads.push({
+          cellX: x,
+          cellY: y,
+          layer,
+          tileId,
+          y: base + layer * LAYER_GAP,
+        });
+      }
+    }
+  }
+
+  // Saias: comparadas com os quatro vizinhos, so onde esta celula e mais alta.
+  const skirts: SkirtQuad[] = [];
+  const neighbours: [SkirtQuad["side"], number, number][] = [
+    ["north", 0, -1],
+    ["south", 0, 1],
+    ["west", -1, 0],
+    ["east", 1, 0],
+  ];
+
+  for (let y = 0; y < map.height; y += 1) {
+    for (let x = 0; x < map.width; x += 1) {
+      const index = y * map.width + x;
+      const top = surface[index] ?? 0;
+      const tileId = map.data.at(x, y, 0);
+      if (tileKind(tileId) === "empty") continue;
+
+      for (const [side, dx, dy] of neighbours) {
+        const nx = x + dx;
+        const ny = y + dy;
+        // Fora do mapa conta como altura zero, entao a borda so ganha parede
+        // quando o mapa foi de fato levantado ali.
+        const bottom =
+          nx < 0 || ny < 0 || nx >= map.width || ny >= map.height
+            ? 0
+            : (surface[ny * map.width + nx] ?? 0);
+
+        if (top > bottom) {
+          skirts.push({ cellX: x, cellY: y, side, tileId, top, bottom });
+        }
+      }
     }
   }
 
   const billboards: SceneBillboard[] = [];
   for (const event of map.events.values()) {
     const index = event.y * map.width + event.x;
-    // O evento fica em cima da geometria da celula, nao no nivel do terreno.
-    // Usar so a elevacao deixaria o personagem afundado dentro do bloco.
-    const step = heights[index] ?? 0;
-    const top = surface[index] ?? step * elevationStep;
+    const page = event.pages[0];
 
     billboards.push({
       id: event.id,
       name: event.name,
       x: event.x * tileSize,
       z: event.y * tileSize,
-      base: top,
+      base: surface[index] ?? 0,
       // Altura de um personagem do Essentials: dois tiles de 32 pixels.
       height: tileSize * 1.5,
+      characterName: page?.graphic.characterName ?? "",
     });
   }
 
   return {
     width: map.width,
     height: map.height,
-    boxes,
+    tileSize,
+    elevationStep,
+    quads,
+    skirts,
     billboards,
+    surface,
     center: {
       x: ((map.width - 1) * tileSize) / 2,
       z: ((map.height - 1) * tileSize) / 2,

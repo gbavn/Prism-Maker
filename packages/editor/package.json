@@ -12,12 +12,20 @@
   },
   "dependencies": {
     "@prism/rxdata-parser": "workspace:*",
-    "@prism/scene-format": "workspace:*"
+    "@prism/scene-format": "workspace:*",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "three": "^0.171.0"
   },
   "devDependencies": {
-    "@babylonjs/core": "^7.54.0",
+    "@tailwindcss/vite": "^4.0.0",
+    "@types/react": "^19.0.2",
+    "@types/react-dom": "^19.0.2",
+    "@types/three": "^0.171.0",
+    "@vitejs/plugin-react": "^4.3.4",
     "electron": "^33.2.1",
     "esbuild": "^0.24.2",
+    "tailwindcss": "^4.0.0",
     "vite": "^6.0.7"
   }
 }

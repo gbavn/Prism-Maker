@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import {
   loadMap,
@@ -25,6 +25,21 @@ import { buildScene, type BuiltScene } from "../scene/buildScene.js";
  * janela sem privilegio de arquivo.
  */
 
+/**
+ * Imagens que a viewport precisa carregar.
+ *
+ * Os caminhos sao relativos a raiz do projeto e a janela os busca pelo
+ * protocolo prism-asset, que so serve arquivos de dentro do projeto aberto.
+ * Passar o caminho em vez do conteudo evita jogar megabytes de PNG pelo IPC a
+ * cada troca de mapa.
+ */
+export interface MapGraphics {
+  /** Graphics/Tilesets/<nome>.png, ou null quando o tileset nao tem imagem. */
+  tileset: string | null;
+  /** Por indice de autotile, Graphics/Autotiles/<nome>.png ou null. */
+  autotiles: (string | null)[];
+}
+
 export interface OpenedMap {
   id: number;
   name: string;
@@ -32,6 +47,7 @@ export interface OpenedMap {
   grid: { width: number; height: number };
   /** Altura de cada celula em degraus, na ordem de varredura do XP. */
   heights: number[];
+  graphics: MapGraphics;
   scene: BuiltScene;
 }
 
@@ -50,6 +66,40 @@ function readBytes(path: string): Uint8Array {
 
 function mapFileName(id: number): string {
   return `Map${String(id).padStart(3, "0")}.rxdata`;
+}
+
+/**
+ * Resolve o caminho de uma imagem, tolerando diferenca de caixa.
+ *
+ * Os nomes em Tilesets.rxdata nem sempre batem letra por letra com o arquivo
+ * em disco, e em Linux isso e a diferenca entre funcionar e nao funcionar. O
+ * Windows onde a maioria dos projetos e feito perdoa; nos nao podemos assumir
+ * isso.
+ */
+function findGraphic(root: string, folder: string, name: string): string | null {
+  if (name.trim() === "") return null;
+
+  const direct = join(root, "Graphics", folder, `${name}.png`);
+  if (existsSync(direct)) return `Graphics/${folder}/${name}.png`;
+
+  try {
+    const wanted = `${name.toLowerCase()}.png`;
+    const found = readdirSync(join(root, "Graphics", folder)).find(
+      (file) => file.toLowerCase() === wanted,
+    );
+    return found === undefined ? null : `Graphics/${folder}/${found}`;
+  } catch {
+    return null;
+  }
+}
+
+function mapGraphics(root: string, tileset: RPGTileset): MapGraphics {
+  return {
+    tileset: findGraphic(root, "Tilesets", tileset.tilesetName),
+    autotiles: tileset.autotileNames.map((name) =>
+      findGraphic(root, "Autotiles", name),
+    ),
+  };
 }
 
 function sceneFileName(id: number): string {
@@ -164,6 +214,7 @@ export function openMap(root: string, id: number): OpenedMap {
     id,
     name: infos.get(id)?.name ?? `Map${id}`,
     grid: { width: map.width, height: map.height },
+    graphics: mapGraphics(root, tileset),
     heights,
     scene: buildScene({ map, tileset, project: loadManifest(root), heights }),
   };

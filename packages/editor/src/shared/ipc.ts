@@ -37,3 +37,9 @@ declare global {
     prism: PrismApi;
   }
 }
+
+/** Monta a URL de um arquivo do projeto para a janela carregar. */
+export function assetUrl(relativePath: string): string {
+  const encoded = relativePath.split("/").map(encodeURIComponent).join("/");
+  return `prism-asset://project/${encoded}`;
+}

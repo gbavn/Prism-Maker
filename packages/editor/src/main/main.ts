@@ -1,7 +1,8 @@
 import { existsSync, writeFileSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join, relative, resolve, sep } from "node:path";
+import { pathToFileURL } from "node:url";
 import { fileURLToPath } from "node:url";
-import { app, BrowserWindow, dialog, ipcMain } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, net, protocol } from "electron";
 import {
   openMap,
   openProject,
@@ -39,6 +40,7 @@ async function chooseProjectRoot(): Promise<string> {
 
 ipcMain.handle(IPC.openProject, async (_event, root?: string) => {
   const target = root ?? defaultProjectRoot() ?? (await chooseProjectRoot());
+  assetRoot = resolve(target);
   return openProject(target);
 });
 
@@ -145,6 +147,40 @@ async function captureAndQuit(
   app.exit(1);
 }
 
+/**
+ * Protocolo que serve imagens do projeto para a janela.
+ *
+ * A janela nao tem acesso a disco, entao precisa de um canal para os PNGs de
+ * tileset. Mandar o conteudo pelo IPC custaria megabytes a cada troca de mapa,
+ * e liberar file:// daria a janela o disco inteiro. Um protocolo proprio, com
+ * a raiz do projeto como limite, resolve os dois.
+ *
+ * O confinamento e verificado com caminho resolvido, nao com comparacao de
+ * texto: "Graphics/../../.." precisa falhar.
+ */
+let assetRoot: string | null = null;
+
+function resolveAsset(requestUrl: string): string | null {
+  if (assetRoot === null) return null;
+
+  const raw = decodeURIComponent(new URL(requestUrl).pathname).replace(/^\/+/, "");
+  const target = resolve(assetRoot, raw);
+  const inside = relative(assetRoot, target);
+
+  if (inside === "" || inside.startsWith("..") || inside.startsWith(`..${sep}`)) {
+    return null;
+  }
+  return target;
+}
+
+function registerAssetProtocol(): void {
+  protocol.handle("prism-asset", async (request) => {
+    const target = resolveAsset(request.url);
+    if (target === null) return new Response("fora do projeto", { status: 403 });
+    return net.fetch(pathToFileURL(target).toString());
+  });
+}
+
 function createWindow(): void {
   const window = new BrowserWindow({
     width: 1280,
@@ -170,7 +206,12 @@ function createWindow(): void {
   }
 }
 
+protocol.registerSchemesAsPrivileged([
+  { scheme: "prism-asset", privileges: { standard: true, secure: true, supportFetchAPI: true } },
+]);
+
 void app.whenReady().then(() => {
+  registerAssetProtocol();
   createWindow();
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
