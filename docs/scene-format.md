@@ -70,6 +70,13 @@ Zero é nível do chão. Acima de zero o tile é desenhado por cima do personage
 o que na prática marca geometria alta: copa de árvore, telhado, beiral. Em 2.5D
 isso é um bom palpite inicial de altura, e é exatamente como o formato usa.
 
+### Onde ler isso tudo
+
+O pacote `@prism/rxdata-parser` le e escreve `.rxdata` sem depender de Ruby
+instalado. A escrita e verificada por ida e volta byte a byte nos 110 arquivos
+de `Game/essentials-v21.1/Data`, o que importa porque o editor vai reescrever
+mapas dentro de um projeto que a pessoa continua abrindo no RPG Maker.
+
 ### Tabela `terrain_tags`
 
 O Essentials estende os terrain tags do XP e liga cada um a comportamentos

@@ -25,15 +25,23 @@ export class RubySymbol {
  */
 export class RubyString {
   /**
-   * Mutavel de proposito. O Marshal registra a string na tabela de
-   * referencias antes de ler as variaveis de instancia, e o marcador de
-   * encoding vem justamente como uma delas. Criar uma string nova ao aplicar
-   * o encoding quebraria a identidade compartilhada entre referencias.
+   * Variaveis de instancia que vieram junto, na ordem original.
+   *
+   * Na pratica e o marcador de encoding. Guardar as entradas cruas, em vez de
+   * so o encoding interpretado, e o que permite escrever o arquivo de volta
+   * identico byte a byte.
    */
-  encoding: string | null;
+  readonly ivars = new Map<string, RubyValue>();
 
-  constructor(readonly bytes: Uint8Array, encoding: string | null = null) {
-    this.encoding = encoding;
+  constructor(readonly bytes: Uint8Array) {}
+
+  /** Encoding declarado, ou null quando a string veio sem marcador. */
+  get encoding(): string | null {
+    const marker = this.ivars.get("E");
+    if (marker === true) return "UTF-8";
+    if (marker === false) return "US-ASCII";
+    const named = this.ivars.get("encoding");
+    return named instanceof RubyString ? named.text : null;
   }
 
   get text(): string {
@@ -100,6 +108,20 @@ export class Table {
   }
 }
 
+/**
+ * Um Float do Ruby.
+ *
+ * Precisa ser um tipo proprio porque o JS nao distingue 98 de 98.0, e o
+ * Marshal distingue: o primeiro vira "i", o segundo vira "f". Sem essa
+ * separacao, reescrever um arquivo trocaria silenciosamente o tipo.
+ */
+export class RubyFloat {
+  constructor(readonly value: number) {}
+  valueOf(): number {
+    return this.value;
+  }
+}
+
 export class RubyColor {
   constructor(
     readonly red: number,
@@ -125,6 +147,7 @@ export type RubyValue =
   | bigint
   | RubySymbol
   | RubyString
+  | RubyFloat
   | RubyObject
   | RubyUserDefined
   | Table
@@ -132,3 +155,45 @@ export type RubyValue =
   | RubyTone
   | RubyValue[]
   | Map<RubyValue, RubyValue>;
+
+/**
+ * Subclasses de Array, Hash e String, e variaveis de instancia soltas.
+ *
+ * O Marshal tem um tipo proprio para "isto e um Array, mas de uma subclasse"
+ * e permite pendurar variaveis de instancia em qualquer objeto. O Essentials
+ * usa as duas coisas: `PBAnimations < Array` e `PBAnimation < Array`, no
+ * PkmnAnimations.rxdata, guardam id, nome, grafico e posicao ao lado dos
+ * elementos.
+ *
+ * Um Array de JS nao tem onde guardar isso sem virar outro tipo, e trocar o
+ * tipo quebraria a identidade que a tabela de referencias do Marshal precisa
+ * preservar. Por isso a informacao fica em tabelas laterais, atreladas a
+ * identidade do objeto.
+ */
+const subclassNames = new WeakMap<object, string>();
+const looseIvars = new WeakMap<object, Map<string, RubyValue>>();
+
+/** Marca o valor como pertencente a uma subclasse de Array, Hash ou String. */
+export function setRubyClass(value: object, className: string): void {
+  subclassNames.set(value, className);
+}
+
+export function getRubyClass(value: object): string | undefined {
+  return subclassNames.get(value);
+}
+
+/** Variaveis de instancia penduradas em um Array, Hash ou outro valor. */
+export function rubyIvars(value: object): Map<string, RubyValue> {
+  let ivars = looseIvars.get(value);
+  if (ivars === undefined) {
+    ivars = new Map<string, RubyValue>();
+    looseIvars.set(value, ivars);
+  }
+  return ivars;
+}
+
+export function peekRubyIvars(
+  value: object,
+): Map<string, RubyValue> | undefined {
+  return looseIvars.get(value);
+}

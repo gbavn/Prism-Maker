@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { load, MarshalError } from "./load.js";
-import { RubyString, RubySymbol } from "./values.js";
+import { RubyFloat, RubyString, RubySymbol } from "./values.js";
 
 /**
  * Os bytes de cada caso saem de `Marshal.dump` do Ruby 3.3, nao de leitura
@@ -111,7 +111,7 @@ describe("colecoes", () => {
   });
 
   it("le float", () => {
-    expect(load(bytes(102, 8, 49, 46, 53))).toBe(1.5);
+    expect(load(bytes(102, 8, 49, 46, 53))).toEqual(new RubyFloat(1.5));
   });
 });
 

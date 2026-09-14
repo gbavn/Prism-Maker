@@ -1,5 +1,8 @@
 import {
+  rubyIvars,
+  setRubyClass,
   RubyColor,
+  RubyFloat,
   RubyObject,
   RubyString,
   RubySymbol,
@@ -212,26 +215,46 @@ function readValue(reader: Reader): RubyValue {
 
     case "I": {
       // Objeto com variaveis de instancia anexadas. Na pratica, no RPG Maker,
-      // sao strings carregando o marcador de encoding.
+      // sao strings carregando o marcador de encoding. As entradas sao
+      // guardadas cruas e na ordem, para permitir escrever de volta identico.
       const inner = readValue(reader);
       const count = reader.fixnum();
-      let encoding: string | null = null;
 
       for (let i = 0; i < count; i += 1) {
         const key = readValue(reader);
         const value = readValue(reader);
-        const name = key instanceof RubySymbol ? key.name : "";
-        if (name === "E") encoding = value === true ? "UTF-8" : "US-ASCII";
-        else if (name === "encoding" && value instanceof RubyString) {
-          encoding = value.text;
+        if (!(key instanceof RubySymbol)) {
+          throw new MarshalError(
+            "nome de variavel de instancia nao e simbolo",
+            reader.offset,
+          );
+        }
+        // Altera no lugar: o objeto ja esta na tabela de referencias e
+        // troca-lo agora faria `@` devolver outra instancia.
+        if (inner instanceof RubyString) inner.ivars.set(key.name, value);
+        else if (inner instanceof RubyObject) inner.ivars.set(key.name, value);
+        else if (typeof inner === "object" && inner !== null) {
+          rubyIvars(inner).set(key.name, value);
         }
       }
+      return inner;
+    }
 
-      // Altera no lugar: a string ja esta na tabela de referencias e trocar o
-      // objeto agora faria `@` devolver outra instancia.
-      if (inner instanceof RubyString && encoding !== null) {
-        inner.encoding = encoding;
+    case "C": {
+      // Subclasse de Array, Hash ou String. O objeto interno se registra
+      // sozinho na tabela de referencias; o wrapper nao ocupa posicao.
+      const className = readValue(reader);
+      if (!(className instanceof RubySymbol)) {
+        throw new MarshalError("classe de subclasse nao e simbolo", reader.offset);
       }
+      const inner = readValue(reader);
+      if (typeof inner !== "object" || inner === null) {
+        throw new MarshalError(
+          `subclasse ${className.name} sem objeto interno`,
+          reader.offset,
+        );
+      }
+      setRubyClass(inner, className.name);
       return inner;
     }
 
@@ -301,7 +324,7 @@ function readValue(reader: Reader): RubyValue {
             : text === "nan"
               ? Number.NaN
               : Number.parseFloat(text);
-      return reader.register(value);
+      return reader.register(new RubyFloat(value));
     }
 
     case "l": {
