@@ -1,0 +1,23 @@
+{
+  "permissions": {
+    "deny": [
+      "Read(./Game/**/Audio/**)",
+      "Read(./Game/**/Graphics/**)",
+      "Read(./Game/**/Fonts/**)",
+      "Read(./Game/**/*.rxdata)",
+      "Read(./Game/**/*.dat)",
+      "Read(./Game/**/*.exe)",
+      "Read(./Game/**/*.dll)",
+      "Read(./Game/**/*.sf2)",
+      "Read(./Game/**/*.bmp)",
+      "Read(./Game/**/*.png)",
+      "Read(./Game/**/*.jpg)",
+      "Read(./Game/**/*.gif)",
+      "Read(./Game/**/*.ogg)",
+      "Read(./Game/**/*.wav)",
+      "Read(./Game/**/*.mp3)",
+      "Read(./Game/**/*.mid)",
+      "Read(./Game/**/*.ttf)"
+    ]
+  }
+}
