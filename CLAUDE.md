@@ -28,7 +28,9 @@ pull request e não pedir merge manual, a menos que seja pedido.
 - `examples/` cena e manifesto de exemplo, validados por teste.
 - `Game/essentials-v21.1/` projeto Pokémon Essentials v21.1 completo, usado
   como referência e fixture de teste. Código de terceiro, licença
-  CC BY-NC-SA 4.0. Não editar.
+  CC BY-NC-SA 4.0. **Não editar os scripts do kit.** O que o Prism acrescenta
+  entra por fora: `Plugins/Prism/` (nosso, carregado pelo `PluginManager` do
+  próprio Essentials) e `Graphics/Objects/` (imagens que o editor assa).
 
 Monorepo com pnpm. Da raiz: `pnpm install`, depois `pnpm -r test`,
 `pnpm -r typecheck` e `pnpm -r build`.
@@ -107,8 +109,10 @@ desfazer é um só para os dois modos, porque quem aperta ctrl+Z espera voltar a
 Alteração pendente nunca é jogada fora em silêncio. Trocar de mapa ou abrir o
 Playtest com edição não gravada pergunta antes, numa caixa do sistema com
 Save, Discard e Cancel. **Playtest** grava o que você mandar gravar e abre o
-`Game.exe` do projeto, sem argumento de linha de comando, que é o mesmo que
-dar dois cliques no executável. O kit do v21.1 vem com mkxp-z, e só o
+`Game.exe` do projeto com o argumento `debug`. Verificado no fonte do mkxp-z,
+`src/config.cpp`: `debug` ou `test` como primeiro argumento liga o modo do
+editor, que é o que faz `$DEBUG` valer true. Sem isso o Essentials não compila
+plugin novo, e o plugin do Prism nem seria carregado. O kit do v21.1 vem com mkxp-z, e só o
 executável do Windows: em outro sistema o botão diz isso em vez de falhar
 calado.
 
@@ -129,7 +133,8 @@ mouse e teclado e desenha antes do print, o que exercita seleção, as
 ferramentas, a escolha de bloco na paleta e a reconstrução da cena. Com
 `PRISM_SMOKE_EVENTS=1`, entra no modo Events e seleciona um evento pela
 célula. Com `PRISM_SMOKE_LAYER=<n>`, troca a camada em foco. Com
-`PRISM_SMOKE_3D=1`, troca para 3D antes do print. Com `PRISM_SMOKE_SWITCH=1`
+`PRISM_SMOKE_3D=1`, troca para 3D antes do print. Com
+`PRISM_SMOKE_PLACE=<mapa>:<dx>,<dy>`, abre o mapa e coloca um objeto 3D. Com `PRISM_SMOKE_SWITCH=1`
 troca de mapa, e `PRISM_SMOKE_ANSWER=save|discard|cancel` responde pela caixa
 de alteração pendente, que sem tela ninguém consegue clicar. **Ao rodar com
 `save`, use `PRISM_PROJECT` apontando para uma cópia**: senão o ensaio grava
@@ -167,6 +172,39 @@ Armadilhas já pagas na viewport, todas descobertas rodando o app:
   por família de autotile, não por tile id exato, senão cada célula se acharia
   sozinha. Fora do mapa conta como igual, que é o que evita borda desenhada no
   limite do mapa.
+
+## Objetos 3D
+
+O jogo não tem 3D. O mkxp-z expõe ao Ruby a API do RGSS, que é 2D inteira:
+`Bitmap`, `Sprite`, `Viewport`, `Plane`. Não há malha, câmera nem shader para
+script nenhum, e o `ARCHITECTURE.md` já previa isso ao deixar o fork do motor
+como último passo.
+
+O que existe hoje é o caminho que funciona sem tocar no motor:
+
+1. O editor modela o objeto em 3D (`scene/model.ts`, descrição pura em caixas).
+2. Assa uma imagem com Three, fora da tela, em câmera **ortográfica** a 42
+   graus (`ui/viewport/bake.ts`). Ortográfica porque o tileset do Essentials é
+   desenhado sem fuga de ponto, e perspectiva daria um ponto de fuga por
+   objeto. Ambiente baixo e sol forte, senão todas as faces saem com o mesmo
+   brilho e o objeto vira adesivo.
+3. Grava o PNG em `Graphics/Objects/` e a colocação **dentro do próprio
+   `.rxdata`**, na ivar `@prism_objects` do `RPG::Map`. O Marshal preserva
+   qualquer ivar e o RPG Maker XP ignora o que não conhece, então o projeto
+   continua abrindo no editor original e no jogo sem o plugin.
+4. `Plugins/Prism/` lê essa ivar e cria um `Sprite` por objeto, entregue ao
+   `Spriteset_Map` pelo gancho oficial `:on_new_spriteset_map`. O spriteset
+   passa a atualizar e descartar cada um, então não há alias em script do kit.
+
+A técnica de guardar dado extra em ivar dentro do `.rxdata` veio da
+integração do **Maker Studio**, que faz o mesmo com `@extended_layers`. A
+diferença: eles gravam uma string JSON e trazem um parser próprio, porque o
+mkxp-z não tem a biblioteca `json`; aqui vai um `Array` de `Hash` de verdade,
+com chaves em símbolo, que o jogo lê sem parser nenhum. É o que o nosso
+escritor de Marshal permite fazer e o editor deles não.
+
+Profundidade segue a regra dos personagens: `z` igual à borda de baixo da área
+no chão, então o jogador passa atrás ou na frente conforme anda.
 
 ## Escrita no projeto do usuário
 

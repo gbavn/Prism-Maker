@@ -27,6 +27,7 @@ import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { LAYER_GAP, type BuiltScene, type SceneBillboard } from "../../scene/buildScene.js";
 import { TILE_PIXELS } from "../../scene/tileAtlas.js";
 import {
+  objectKey,
   placeSprite,
   spriteSource,
   type ImageSize as CharsetImageSize,
@@ -558,8 +559,61 @@ export function createViewport(canvas: HTMLCanvasElement): Viewport {
       marks.push({ mesh: mark, id: billboard.id });
     }
 
+    drawObjects(target, sizes, loaded);
     layoutEvents(target, sizes);
     paintMarks();
+  }
+
+  /**
+   * Desenha os objetos 3D ja assados em imagem.
+   *
+   * A mesma imagem que o jogo vai mostrar, no mesmo lugar: e isso que faz o
+   * editor e o jogo concordarem. O que muda entre os dois e so a camera.
+   */
+  function drawObjects(
+    target: BuiltScene,
+    sizes: ReadonlyMap<string, CharsetImageSize>,
+    loaded: ReadonlyMap<string, Texture>,
+  ): void {
+    for (const object of target.objects) {
+      const key = objectKey(object.name);
+      const texture = loaded.get(key);
+      const size = sizes.get(key);
+      if (texture === undefined || size === undefined) continue;
+
+      const geometry = new PlaneGeometry(1, 1);
+      const mesh = new Mesh(
+        geometry,
+        new MeshBasicMaterial({
+          map: texture,
+          alphaTest: 0.5,
+          side: DoubleSide,
+        }),
+      );
+      mesh.name = `object:${object.name}`;
+      mesh.renderOrder = 5;
+      scene.add(mesh);
+
+      // Entra na mesma lista dos sprites de evento: os dois seguem a camera
+      // do mesmo jeito, deitados em 2D e em pe em 3D.
+      sprites.push({
+        mesh,
+        billboard: {
+          id: -1,
+          name: object.name,
+          cellX: object.x,
+          cellY: object.y + object.depth - 1,
+          x: object.centreX,
+          z: object.footZ - target.tileSize / 2,
+          base: object.base,
+          characterName: "",
+          direction: 2,
+          pattern: 0,
+          tileId: 0,
+          opacity: 255,
+        },
+      });
+    }
   }
 
   /**
@@ -574,9 +628,14 @@ export function createViewport(canvas: HTMLCanvasElement): Viewport {
     sizes: ReadonlyMap<string, CharsetImageSize>,
   ): void {
     for (const { mesh, billboard } of sprites) {
-      const source = spriteSource(billboard, sizes);
-      const frame =
-        source.kind === "marker"
+      // Objeto assado usa a imagem inteira; evento usa um frame do charset.
+      const whole = mesh.name.startsWith("object:")
+        ? sizes.get(objectKey(billboard.name))
+        : undefined;
+      const source = whole ? null : spriteSource(billboard, sizes);
+      const frame = whole
+        ? { x: 0, y: 0, width: whole.width, height: whole.height }
+        : source === null || source.kind === "marker"
           ? { x: 0, y: 0, width: 16, height: 16 }
           : source.frame;
 
@@ -584,7 +643,9 @@ export function createViewport(canvas: HTMLCanvasElement): Viewport {
       mesh.scale.set(at.width, at.height, 1);
       mesh.position.set(at.x, at.y, at.z);
       // O marcador nao tem pe: ele marca a celula, entao fica no meio dela.
-      if (source.kind === "marker" && mode === "2d") mesh.position.z = billboard.z;
+      if (source?.kind === "marker" && mode === "2d") {
+        mesh.position.z = billboard.z;
+      }
       mesh.rotation.set(mode === "2d" ? -Math.PI / 2 : 0, 0, 0);
     }
   }

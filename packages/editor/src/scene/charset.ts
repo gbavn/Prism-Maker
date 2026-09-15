@@ -94,7 +94,7 @@ export interface SpritePlacement {
  * desenhado do jeito que faz sentido em cada vista.
  */
 export function placeSprite(
-  billboard: SceneBillboard,
+  billboard: { x: number; z: number; base: number },
   frame: Frame,
   tileSize: number,
   mode: ViewMode,
@@ -165,4 +165,9 @@ export function spriteSource(
   }
 
   return { kind: "marker" };
+}
+
+/** Chave da imagem de um objeto assado. */
+export function objectKey(name: string): string {
+  return `object:${name}`;
 }

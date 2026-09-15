@@ -27,6 +27,32 @@ export interface TileQuad {
 }
 
 /**
+ * Um objeto 3D colocado no mapa, ja assado em imagem pelo editor.
+ *
+ * Mora dentro do .rxdata, numa ivar propria. A area no chao esta em celulas;
+ * a imagem pode ser mais alta que isso, e a parte que sobra fica por cima das
+ * celulas ao norte, como acontece com qualquer construcao alta num mapa.
+ */
+export interface PlacedObject {
+  /** Arquivo em Graphics/Objects, sem extensao. */
+  name: string;
+  /** Celula do canto noroeste da area no chao. */
+  x: number;
+  y: number;
+  width: number;
+  depth: number;
+}
+
+/** Um objeto ja posicionado no mundo, pronto para desenhar. */
+export interface SceneObject extends PlacedObject {
+  /** Centro da area no chao, em unidades de mundo. */
+  centreX: number;
+  /** Borda sul da area no chao, onde a imagem se apoia. */
+  footZ: number;
+  base: number;
+}
+
+/**
  * Um evento posicionado no mundo.
  *
  * O tamanho do sprite nao vem daqui: o frame de um charset e a imagem dividida
@@ -84,6 +110,7 @@ export interface BuiltScene {
   quads: TileQuad[];
   skirts: SkirtQuad[];
   billboards: SceneBillboard[];
+  objects: SceneObject[];
   /** Altura do topo de cada celula, para o destaque e para assentar eventos. */
   surface: number[];
   center: { x: number; z: number };
@@ -102,6 +129,8 @@ export interface BuildSceneInput {
   map: RPGMap;
   tileset: RPGTileset;
   project: Project;
+  /** Objetos colocados pelo editor. Ausente significa mapa sem nenhum. */
+  objects?: readonly PlacedObject[];
   /** Altura de cada celula em degraus. Ausente significa mapa plano. */
   heights?: readonly number[];
 }
@@ -200,6 +229,27 @@ export function buildScene(input: BuildSceneInput): BuiltScene {
     });
   }
 
+  const objects: SceneObject[] = (input.objects ?? []).map((object) => {
+    // Apoiado no ponto mais alto da propria area: um objeto meio em cima de um
+    // degrau precisa subir junto, senao ele afunda na quina.
+    let base = 0;
+    for (let dy = 0; dy < object.depth; dy += 1) {
+      for (let dx = 0; dx < object.width; dx += 1) {
+        const x = object.x + dx;
+        const y = object.y + dy;
+        if (x < 0 || y < 0 || x >= map.width || y >= map.height) continue;
+        base = Math.max(base, surface[y * map.width + x] ?? 0);
+      }
+    }
+
+    return {
+      ...object,
+      centreX: (object.x + (object.width - 1) / 2) * tileSize,
+      footZ: (object.y + object.depth - 1) * tileSize + tileSize / 2,
+      base,
+    };
+  });
+
   return {
     width: map.width,
     height: map.height,
@@ -208,6 +258,7 @@ export function buildScene(input: BuildSceneInput): BuiltScene {
     quads,
     skirts,
     billboards,
+    objects,
     surface,
     center: {
       x: ((map.width - 1) * tileSize) / 2,

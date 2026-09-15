@@ -10,6 +10,8 @@ import {
   type Stamp,
 } from "../scene/paint.js";
 import { EventPanel } from "./chrome/EventPanel.jsx";
+import { foodTruck } from "../scene/model.js";
+import { bakeModel } from "./viewport/bake.js";
 import { MapPanel } from "./chrome/MapPanel.jsx";
 import { ModeRail, type ModeId } from "./chrome/ModeRail.jsx";
 import { SOON_LABEL } from "./chrome/Soon.jsx";
@@ -169,9 +171,46 @@ export function App() {
     [state.map?.events],
   );
 
+  /**
+   * Coloca o objeto 3D na celula, assando a imagem na hora.
+   *
+   * Escreve direto no projeto, fora do desfazer: o objeto e uma imagem no
+   * disco mais uma linha no .rxdata, e fingir que ctrl+Z desfaz isso seria
+   * mentir. A interface diz o que gravou.
+   */
+  const placeObject = useCallback(
+    (cell: PickedCell) => {
+      const root = state.project?.root;
+      const id = state.map?.id;
+      if (root === undefined || id === undefined) return;
+
+      void (async () => {
+        try {
+          const model = foodTruck();
+          const baked = bakeModel(model);
+          const object = {
+            name: model.name,
+            x: cell.x,
+            y: cell.y,
+            width: model.footprint.width,
+            depth: model.footprint.depth,
+          };
+
+          await window.prism.placeObject(root, id, object, baked.png);
+          setMessage(`placed ${model.name} at ${cell.x},${cell.y}`);
+          await project.openMap(id);
+        } catch (error) {
+          setMessage(error instanceof Error ? error.message : String(error));
+        }
+      })();
+    },
+    [state.project?.root, state.map?.id, project],
+  );
+
   const onStrokeStart = useCallback(
     (cell: PickedCell, erase: boolean) => {
       if (mode === "events") return selectAt(cell);
+      if (tool === "place") return placeObject(cell);
       if (draft === null) return;
 
       const at: Stroke = { base: draft, from: cell, erase };
@@ -183,7 +222,7 @@ export function App() {
       project.edit(next);
       setMessage(null);
     },
-    [mode, selectAt, draft, apply, project],
+    [mode, selectAt, tool, placeObject, draft, apply, project],
   );
 
   /**
@@ -394,7 +433,9 @@ export function App() {
 
   // A área que a ferramenta cobriria, para o cursor mostrar antes de pintar.
   const area =
-    mode === "terrain"
+    mode === "draw" && tool === "place"
+      ? { left: 0, top: 0, width: 3, height: 2 }
+      : mode === "terrain"
       ? brushFootprint(singleStamp(0), brush)
       : mode === "events"
         ? { left: 0, top: 0, width: 1, height: 1 }

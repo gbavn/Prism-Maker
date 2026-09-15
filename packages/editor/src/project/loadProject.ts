@@ -16,9 +16,12 @@ import {
   loadMapInfos,
   loadTilesets,
   RubyObject,
+  RubyString,
+  RubySymbol,
   Table,
   type RPGMap,
   type RPGTileset,
+  type RubyValue,
 } from "@prism/rxdata-parser";
 import {
   decodeElevation,
@@ -28,7 +31,12 @@ import {
   type Project,
   type Scene,
 } from "@prism/scene-format";
-import { buildScene, type BuiltScene } from "../scene/buildScene.js";
+import {
+  buildScene,
+  type BuiltScene,
+  type PlacedObject,
+} from "../scene/buildScene.js";
+export type { PlacedObject };
 import { MAP_LAYERS } from "@prism/scene-format";
 
 /**
@@ -106,6 +114,8 @@ export interface OpenedMap {
   graphics: MapGraphics;
   /** Os eventos do mapa, para a lista e a inspecao do modo Events. */
   events: EventSummary[];
+  /** Objetos 3D colocados pelo editor neste mapa. */
+  objects: PlacedObject[];
   /** Grade de tiles, largura por altura por três camadas, na ordem do XP. */
   tiles: Uint16Array;
   scene: BuiltScene;
@@ -260,17 +270,65 @@ function loadSceneFile(root: string, id: number): Scene | undefined {
  * si nao muda enquanto se edita relevo. O cache e invalidado ao reabrir o
  * mapa, que e quando o arquivo pode ter mudado por fora.
  */
-const loaded = new Map<string, { map: RPGMap; tileset: RPGTileset }>();
+const loaded = new Map<
+  string,
+  { map: RPGMap; tileset: RPGTileset; objects: PlacedObject[] }
+>();
 
 function cacheKey(root: string, id: number): string {
   return `${root}\u0000${id}`;
 }
 
+/**
+ * Le os objetos colocados pelo Prism dentro do .rxdata.
+ *
+ * Ivar propria, que o RPG Maker ignora. Um arquivo sem ela e o caso comum, e
+ * nao e erro: mapa nenhum do Essentials tem objeto do Prism.
+ */
+function readObjects(bytes: Uint8Array): PlacedObject[] {
+  const document = load(bytes);
+  if (!(document instanceof RubyObject)) return [];
+
+  const list = document.ivars.get("@prism_objects");
+  if (!Array.isArray(list)) return [];
+
+  const objects: PlacedObject[] = [];
+  for (const entry of list) {
+    if (!(entry instanceof Map)) continue;
+    const field = (name: string) => {
+      for (const [key, value] of entry) {
+        if (key instanceof RubySymbol && key.name === name) return value;
+      }
+      return undefined;
+    };
+
+    const name = field("name");
+    const x = field("x");
+    const y = field("y");
+    const width = field("width");
+    const depth = field("depth");
+
+    if (
+      !(name instanceof RubyString) ||
+      typeof x !== "number" ||
+      typeof y !== "number" ||
+      typeof width !== "number" ||
+      typeof depth !== "number"
+    ) {
+      continue;
+    }
+    objects.push({ name: name.text, x, y, width, depth });
+  }
+  return objects;
+}
+
 function readMapAndTileset(
   root: string,
   id: number,
-): { map: RPGMap; tileset: RPGTileset } {
-  const map: RPGMap = loadMap(readBytes(dataPath(root, mapFileName(id))));
+): { map: RPGMap; tileset: RPGTileset; objects: PlacedObject[] } {
+  const bytes = readBytes(dataPath(root, mapFileName(id)));
+  const map: RPGMap = loadMap(bytes);
+  const objects = readObjects(bytes);
   const tilesets = loadTilesets(readBytes(dataPath(root, "Tilesets.rxdata")));
   const tileset = tilesets.get(map.tilesetId);
 
@@ -279,7 +337,7 @@ function readMapAndTileset(
       `o mapa ${id} usa o tileset ${map.tilesetId}, que nao existe no projeto`,
     );
   }
-  return { map, tileset };
+  return { map, tileset, objects };
 }
 
 /**
@@ -312,6 +370,7 @@ export function rebuildScene(
     tileset: entry.tileset,
     project: loadManifest(root),
     heights,
+    objects: entry.objects,
   });
 }
 
@@ -319,7 +378,7 @@ export function openMap(root: string, id: number): OpenedMap {
   const entry = readMapAndTileset(root, id);
   loaded.set(cacheKey(root, id), entry);
   rememberMtime(root, id);
-  const { map, tileset } = entry;
+  const { map, tileset, objects } = entry;
 
   const infos = loadMapInfos(readBytes(dataPath(root, "MapInfos.rxdata")));
   const scene = loadSceneFile(root, id);
@@ -333,10 +392,79 @@ export function openMap(root: string, id: number): OpenedMap {
     grid: { width: map.width, height: map.height },
     graphics: mapGraphics(root, tileset, map),
     events: mapEvents(map),
+    objects,
     tiles: new Uint16Array(map.data.data),
     heights,
-    scene: buildScene({ map, tileset, project: loadManifest(root), heights }),
+    scene: buildScene({
+      map,
+      tileset,
+      project: loadManifest(root),
+      heights,
+      objects,
+    }),
   };
+}
+
+/** Uma string do Ruby em UTF-8, com o marcador de encoding que o Marshal usa. */
+function utf8(text: string): RubyString {
+  const value = new RubyString(new TextEncoder().encode(text));
+  value.ivars.set("E", true);
+  return value;
+}
+
+/**
+ * Grava os objetos do mapa dentro do proprio .rxdata.
+ *
+ * Numa variavel de instancia a mais, `@prism_objects`, no RPG::Map. O Marshal
+ * do Ruby serializa qualquer ivar que o objeto tiver, e o RPG Maker XP ignora
+ * o que nao conhece: o projeto continua abrindo no editor original e no jogo
+ * sem o plugin. E a mesma tecnica que o Maker Studio usa para as camadas
+ * extras dele, verificada no codigo da integracao deles.
+ *
+ * Diferenca proposital: eles guardam uma string JSON, porque o editor deles e
+ * JavaScript e escrever estrutura Ruby daria trabalho. Aqui vai um Array de
+ * Hash de verdade, que o jogo le sem parser nenhum. O mkxp-z nao traz a
+ * biblioteca json, entao a alternativa custaria um parser escrito a mao.
+ */
+export function saveObjects(
+  root: string,
+  id: number,
+  objects: readonly PlacedObject[],
+): { path: string; count: number } {
+  assertUnchanged(root, id);
+
+  const relative = join("Data", mapFileName(id));
+  const source = join(root, relative);
+  const document = load(readBytes(source));
+
+  if (!(document instanceof RubyObject) || document.className !== "RPG::Map") {
+    throw new Error(`${mapFileName(id)} não é um RPG::Map`);
+  }
+
+  const list = objects.map((object) => {
+    // Chaves em simbolo, que no Ruby se le `object[:name]`. Valor de texto
+    // com o marcador de encoding, senao a string chega ao jogo como bytes
+    // sem encoding declarado.
+    const entry = new Map<RubyValue, RubyValue>();
+    entry.set(new RubySymbol("name"), utf8(object.name));
+    entry.set(new RubySymbol("x"), object.x);
+    entry.set(new RubySymbol("y"), object.y);
+    entry.set(new RubySymbol("width"), object.width);
+    entry.set(new RubySymbol("depth"), object.depth);
+    return entry;
+  });
+
+  backupOnce(root, relative);
+  document.ivars.set("@prism_objects", list);
+
+  const temporary = `${source}.prism-tmp`;
+  writeFileSync(temporary, dump(document));
+  renameSync(temporary, source);
+
+  loaded.delete(cacheKey(root, id));
+  rememberMtime(root, id);
+
+  return { path: source, count: objects.length };
 }
 
 /**

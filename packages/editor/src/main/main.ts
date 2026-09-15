@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { existsSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join, relative, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
 import { fileURLToPath } from "node:url";
@@ -9,8 +9,10 @@ import {
   openProject,
   rebuildScene,
   saveElevation,
+  saveObjects,
   saveTiles,
 } from "../project/loadProject.js";
+import type { PlacedObject } from "../scene/buildScene.js";
 import { IPC } from "../shared/ipc.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -77,6 +79,27 @@ ipcMain.handle(
 );
 
 /**
+ * Grava um objeto 3D no projeto.
+ *
+ * Duas escritas: a imagem assada em Graphics/Objects, e a colocacao dentro do
+ * .rxdata do mapa. A imagem vai para a pasta de graficos do projeto porque e
+ * de la que o jogo carrega qualquer bitmap, pelo RPG::Cache.
+ */
+ipcMain.handle(
+  IPC.placeObject,
+  (_event, root: string, id: number, object: PlacedObject, png: string) => {
+    const folder = join(root, "Graphics", "Objects");
+    mkdirSync(folder, { recursive: true });
+
+    const image = join(folder, `${object.name}.png`);
+    writeFileSync(image, Buffer.from(png, "base64"));
+
+    const { count } = saveObjects(root, id, [object]);
+    return { image, count };
+  },
+);
+
+/**
  * Pergunta o que fazer com alteracao pendente.
  *
  * Dialogo do sistema, e nao uma janela desenhada por nos: perder trabalho e
@@ -113,10 +136,12 @@ ipcMain.handle(IPC.confirmSave, async (event, mapName: string) => {
 /**
  * Abre o jogo do projeto.
  *
- * Sem argumento de linha de comando: o mesmo que dar dois cliques no
- * executavel. O kit do Essentials v21.1 vem com mkxp-z como `Game.exe`, e
- * inventar uma bandeira de depuracao que eu nao tenho como verificar aqui
- * daria erro na maquina de quem usa e em nenhuma outra.
+ * Aberto em modo de depuracao, com o argumento `debug`. Verificado no fonte do
+ * mkxp-z, `src/config.cpp`: `debug` ou `test` como primeiro argumento liga o
+ * modo do editor, que e o que faz `$DEBUG` valer true no Ruby. Isso importa
+ * porque o Essentials so compila plugin novo em depuracao, entao sem esse
+ * argumento o plugin do Prism nem seria carregado. E tambem e o que o proprio
+ * RPG Maker faz ao testar o jogo.
  *
  * O processo e solto do editor: fechar o Prism nao pode matar o jogo aberto.
  */
@@ -133,7 +158,7 @@ ipcMain.handle(IPC.playtest, (_event, root: string) => {
     };
   }
 
-  const game = spawn(executable, [], {
+  const game = spawn(executable, ["debug"], {
     cwd: root,
     detached: true,
     stdio: "ignore",
@@ -271,6 +296,42 @@ async function rehearseEvents(window: BrowserWindow): Promise<void> {
   }
 }
 
+/**
+ * Ensaio de colocacao de objeto 3D.
+ *
+ * Recebe "<mapa>:<dx>,<dy>": abre o mapa, escolhe a ferramenta Place e clica
+ * no centro da viewport deslocado de dx e dy celulas. O centro e usado porque
+ * a camera centraliza o mapa ao abrir, entao a conta vale para qualquer
+ * tamanho de mapa.
+ */
+async function rehearsePlacing(window: BrowserWindow, spec: string): Promise<void> {
+  const wait = (ms: number) => new Promise((done) => setTimeout(done, ms));
+  const [mapPart, cellPart] = spec.split(":");
+  const [dx, dy] = (cellPart ?? "0,0").split(",").map((value) => Number(value) || 0);
+
+  await window.webContents.executeJavaScript(
+    `document.querySelector('[data-map="${mapPart}"]')?.click()`,
+  );
+  await wait(2500);
+
+  await window.webContents.executeJavaScript(
+    "document.querySelector('[data-tool=\"place\"]')?.click()",
+  );
+  await wait(600);
+
+  const x = Math.round(672 + (dx ?? 0) * 32);
+  const y = Math.round(412 + (dy ?? 0) * 32);
+  window.webContents.sendInputEvent({ type: "mouseMove", x, y });
+  await wait(200);
+  window.webContents.sendInputEvent({
+    type: "mouseDown", x, y, button: "left", clickCount: 1,
+  });
+  window.webContents.sendInputEvent({
+    type: "mouseUp", x, y, button: "left", clickCount: 1,
+  });
+  await wait(3000);
+}
+
 async function captureAndQuit(
   window: BrowserWindow,
   target: string,
@@ -297,6 +358,10 @@ async function captureAndQuit(
           type: "mouseUp", x: 170, y: 257, button: "left", clickCount: 1,
         });
         await new Promise((done) => setTimeout(done, 2000));
+      }
+      const place = process.env["PRISM_SMOKE_PLACE"];
+      if (place !== undefined) {
+        await rehearsePlacing(window, place);
       }
       const layer = process.env["PRISM_SMOKE_LAYER"];
       if (layer !== undefined) {

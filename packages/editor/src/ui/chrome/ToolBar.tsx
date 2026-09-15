@@ -10,7 +10,7 @@ import {
 } from "lucide-react";
 import { Soon } from "./Soon.jsx";
 
-export type ToolId = "pencil" | "rectangle" | "fill" | "erase";
+export type ToolId = "pencil" | "rectangle" | "fill" | "erase" | "place";
 
 interface Props {
   mode: "draw" | "terrain" | "events";
@@ -34,12 +34,10 @@ const TOOLS = [
   { id: "rectangle", label: "Rectangle", icon: Square },
   { id: "fill", label: "Fill", icon: PaintBucket },
   { id: "erase", label: "Erase", icon: Eraser },
+  { id: "place", label: "Place", icon: MoveDiagonal },
 ] as const;
 
-const soonTools = [
-  { label: "Select", icon: MousePointer2 },
-  { label: "Place", icon: MoveDiagonal },
-] as const;
+const soonTools = [{ label: "Select", icon: MousePointer2 }] as const;
 
 /**
  * The tool strip.
@@ -137,6 +135,7 @@ export function ToolBar({
             type="button"
             onClick={() => onTool(entry.id)}
             aria-pressed={entry.id === tool}
+            data-tool={entry.id}
             className={`${chip} ${entry.id === tool ? active : idle}`}
           >
             <Glyph className="h-3.5 w-3.5" strokeWidth={1.8} />

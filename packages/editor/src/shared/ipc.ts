@@ -1,4 +1,5 @@
 import type { OpenedMap, OpenedProject } from "../project/loadProject.js";
+import type { PlacedObject } from "../scene/buildScene.js";
 import type { BuiltScene } from "../scene/buildScene.js";
 
 /** Canais de IPC entre o processo principal e a janela. */
@@ -10,6 +11,7 @@ export const IPC = {
   saveTiles: "prism:save-tiles",
   confirmSave: "prism:confirm-save",
   playtest: "prism:playtest",
+  placeObject: "prism:place-object",
 } as const;
 
 /**
@@ -44,6 +46,18 @@ export interface PrismApi {
   confirmSave(mapName: string): Promise<SaveAnswer>;
   /** Abre o jogo do projeto. */
   playtest(root: string): Promise<PlaytestResult>;
+  /**
+   * Grava a imagem assada em Graphics/Objects e a colocacao no .rxdata.
+   *
+   * O render acontece na janela, que e onde existe WebGL; aqui vai so o PNG
+   * pronto, em base64.
+   */
+  placeObject(
+    root: string,
+    id: number,
+    object: PlacedObject,
+    png: string,
+  ): Promise<{ image: string; count: number }>;
 }
 
 /** Resposta do dialogo de alteracao pendente. */

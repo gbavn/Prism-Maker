@@ -2,3 +2,6 @@ node_modules/
 dist/
 *.tsbuildinfo
 .DS_Store
+
+# Backups que o proprio editor grava dentro do projeto aberto.
+.prism/

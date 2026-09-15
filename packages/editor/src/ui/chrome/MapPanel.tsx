@@ -98,6 +98,7 @@ export function MapPanel({ project, currentId, onSelect, onSoon }: Props) {
               key={map.id}
               type="button"
               onClick={() => onSelect(map.id)}
+              data-map={map.id}
               aria-current={current}
               className={`flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[12px] transition-colors ${
                 current

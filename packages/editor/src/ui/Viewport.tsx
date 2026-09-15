@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useImperativeHandle, useRef } from "react";
 import type { OpenedMap } from "../project/loadProject.js";
 import { assetUrl } from "../shared/ipc.js";
-import { characterKey } from "../scene/charset.js";
+import { characterKey, objectKey } from "../scene/charset.js";
 import {
   createViewport,
   type HighlightArea,
@@ -54,6 +54,9 @@ function imagesOf(map: OpenedMap): Map<string, string> {
   });
   for (const [name, path] of Object.entries(map.graphics.characters)) {
     sources.set(characterKey(name), assetUrl(path));
+  }
+  for (const object of map.objects) {
+    sources.set(objectKey(object.name), assetUrl(`Graphics/Objects/${object.name}.png`));
   }
   return sources;
 }
