@@ -764,8 +764,8 @@ export function createViewport(canvas: HTMLCanvasElement): Viewport {
     };
 
     grid = {
-      minor: lines(minor, 0xdfe3ea, 0.35),
-      major: lines(major, 0xdfe3ea, 0.6),
+      minor: lines(minor, 0xdfe3ea, 0.5),
+      major: lines(major, 0xdfe3ea, 0.85),
     };
     paintGrid();
   }
@@ -801,8 +801,8 @@ export function createViewport(canvas: HTMLCanvasElement): Viewport {
         activeLayer === null || layer === activeLayer
           ? 1
           : layer < activeLayer
-            ? 0.68
-            : 0.52;
+            ? 0.5
+            : 0.36;
       material.color.setScalar(shade);
     }
   }
