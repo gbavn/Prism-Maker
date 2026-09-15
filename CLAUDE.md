@@ -59,9 +59,14 @@ por divisórias, e acento violeta. Layout de editor de mapa é convenção do
 gênero e não há problema em segui-la, mas a aparência não deve lembrar nenhuma
 ferramenta específica.
 
-Modo **Draw**: escolha o tile na paleta da direita, clique pinta, shift mais
-clique apaga, e o seletor de camada escolhe entre as três do XP. Grava no
-`.rxdata`.
+Modo **Draw**: escolha o tile na paleta da direita, arraste na paleta para
+pegar um bloco em vez de um tile só, e o seletor de camada escolhe entre as
+três do XP. Ferramentas: lápis, retângulo, balde e borracha. Arrastar pinta
+contínuo e o arrasto inteiro é um passo só de desfazer. Shift apaga, seja
+qual for a ferramenta. Grava no `.rxdata`.
+
+Editar é coisa da visão 2D. Em 3D o botão esquerdo gira a câmera: em 2D se
+edita, em 3D se olha.
 
 Modo **Terrain**: clique sobe, shift mais clique desce, L nivela o bloco.
 Grava no `.scene.json`.
@@ -74,8 +79,8 @@ Para provar que o editor renderiza sem ter tela, existe um smoke test com
 imagem: `PRISM_SMOKE_SHOT=/caminho/saida.png` faz o app subir, esperar a
 primeira cena e salvar um PNG antes de sair. Em máquina sem monitor, rodar
 com `xvfb-run`. Com `PRISM_SMOKE_EDIT=1` junto, o próprio Electron injeta
-mouse e teclado e levanta terreno antes do print, o que exercita seleção,
-pincel e reconstrução da cena.
+mouse e teclado e desenha antes do print, o que exercita seleção, as
+ferramentas, a escolha de bloco na paleta e a reconstrução da cena.
 
 Armadilhas já pagas na viewport, todas descobertas rodando o app:
 

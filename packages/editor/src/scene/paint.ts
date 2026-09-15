@@ -122,6 +122,45 @@ function refresh(
   if (shape !== null) tiles[at] = family * AUTOTILE_SHAPES + shape;
 }
 
+/**
+ * Recalcula a forma das celulas tocadas e do anel em volta delas.
+ *
+ * O anel importa: quem estava na borda do lago deixa de estar quando o lago
+ * cresce, e quem estava no meio vira borda quando o lago encolhe.
+ */
+function refreshAround(
+  tiles: Uint16Array,
+  grid: Grid,
+  layer: number,
+  touched: Iterable<readonly [number, number]>,
+): void {
+  const seen = new Set<number>();
+  for (const [x, y] of touched) {
+    for (let dy = -1; dy <= 1; dy += 1) {
+      for (let dx = -1; dx <= 1; dx += 1) {
+        const key = (y + dy) * grid.width + (x + dx);
+        if (seen.has(key)) continue;
+        seen.add(key);
+        refresh(tiles, grid, x + dx, y + dy, layer);
+      }
+    }
+  }
+}
+
+/** Recusa grade e camada que nao batem com o mapa, antes de escrever nada. */
+function assertGrid(tiles: Readonly<Uint16Array>, grid: Grid, layer: number): void {
+  const expected = grid.width * grid.height * MAP_LAYERS;
+  if (tiles.length !== expected) {
+    throw new Error(
+      `a grade tem ${tiles.length} celulas, mas o mapa e ` +
+        `${grid.width}x${grid.height} em ${MAP_LAYERS} camadas`,
+    );
+  }
+  if (layer < 0 || layer >= MAP_LAYERS) {
+    throw new Error(`camada ${layer} nao existe`);
+  }
+}
+
 export interface PaintOptions {
   x: number;
   y: number;
@@ -152,16 +191,7 @@ export function paint(
   grid: Grid,
   options: PaintOptions,
 ): PaintResult {
-  const expected = grid.width * grid.height * MAP_LAYERS;
-  if (tiles.length !== expected) {
-    throw new Error(
-      `a grade tem ${tiles.length} celulas, mas o mapa e ` +
-        `${grid.width}x${grid.height} em ${MAP_LAYERS} camadas`,
-    );
-  }
-  if (options.layer < 0 || options.layer >= MAP_LAYERS) {
-    throw new Error(`camada ${options.layer} nao existe`);
-  }
+  assertGrid(tiles, grid, options.layer);
 
   const next = new Uint16Array(tiles);
   const reach = Math.floor(Math.max(1, options.size ?? 1) / 2);
@@ -185,20 +215,7 @@ export function paint(
 
   if (changed === 0) return { tiles: next, changed: 0 };
 
-  // As celulas pintadas e o anel em volta delas: quem estava na borda do lago
-  // deixa de estar quando o lago cresce.
-  const seen = new Set<number>();
-  for (const [x, y] of touched) {
-    for (let dy = -1; dy <= 1; dy += 1) {
-      for (let dx = -1; dx <= 1; dx += 1) {
-        const key = (y + dy) * grid.width + (x + dx);
-        if (seen.has(key)) continue;
-        seen.add(key);
-        refresh(next, grid, x + dx, y + dy, options.layer);
-      }
-    }
-  }
-
+  refreshAround(next, grid, options.layer, touched);
   return { tiles: next, changed };
 }
 
@@ -210,4 +227,219 @@ export function autotileTileId(autotile: number): number {
 /** Tile id a partir da posicao no bitmap do tileset. */
 export function tilesetTileId(column: number, row: number): number {
   return FIRST_REGULAR_TILE + row * 8 + column;
+}
+
+/**
+ * Um bloco de tiles escolhido na paleta.
+ *
+ * Um tile so e um carimbo 1x1. Escolher um bloco na paleta guarda a forma
+ * inteira, para que pintar repita o bloco em vez de repetir o canto dele.
+ */
+export interface Stamp {
+  width: number;
+  height: number;
+  /** Ids linha a linha, comecando pelo canto superior esquerdo. */
+  tiles: readonly number[];
+}
+
+/** O carimbo de um tile so. */
+export function singleStamp(tileId: number): Stamp {
+  return { width: 1, height: 1, tiles: [tileId] };
+}
+
+/** O id que o carimbo produz na celula (x, y), ancorado em (originX, originY). */
+function stampTile(
+  stamp: Stamp,
+  originX: number,
+  originY: number,
+  x: number,
+  y: number,
+): number {
+  const column = ((x - originX) % stamp.width + stamp.width) % stamp.width;
+  const row = ((y - originY) % stamp.height + stamp.height) % stamp.height;
+  return stamp.tiles[row * stamp.width + column] ?? 0;
+}
+
+export interface StampOptions {
+  x: number;
+  y: number;
+  layer: number;
+  stamp: Stamp;
+  /** Lado do pincel, so usado quando o carimbo e 1x1. */
+  size?: number;
+}
+
+/**
+ * Carimba na grade e devolve uma grade nova.
+ *
+ * Com carimbo de um tile so, o pincel vale e a celula clicada fica no centro,
+ * que e o que a mao espera de um lapis. Com um bloco, o bloco manda: ele cai
+ * com o canto superior esquerdo na celula clicada, como no RPG Maker.
+ */
+export function stampAt(
+  tiles: Readonly<Uint16Array>,
+  grid: Grid,
+  options: StampOptions,
+): PaintResult {
+  assertGrid(tiles, grid, options.layer);
+
+  const { stamp } = options;
+  const single = stamp.width === 1 && stamp.height === 1;
+  const reach = single ? Math.floor(Math.max(1, options.size ?? 1) / 2) : 0;
+
+  const left = options.x - reach;
+  const top = options.y - reach;
+  const right = single ? options.x + reach : options.x + stamp.width - 1;
+  const bottom = single ? options.y + reach : options.y + stamp.height - 1;
+
+  return write(tiles, grid, options.layer, left, top, right, bottom, (x, y) =>
+    stampTile(stamp, left, top, x, y),
+  );
+}
+
+export interface RectOptions {
+  layer: number;
+  stamp: Stamp;
+  /** Um canto do retangulo. */
+  from: { x: number; y: number };
+  /** O canto oposto. Qualquer ordem serve. */
+  to: { x: number; y: number };
+}
+
+/**
+ * Preenche um retangulo repetindo o carimbo.
+ *
+ * Repetir, e nao esticar: esticar um bloco de grama em cima de um terreno
+ * grande daria faixas do mesmo pixel, enquanto repetir devolve o padrao que a
+ * pessoa escolheu na paleta.
+ */
+export function fillRect(
+  tiles: Readonly<Uint16Array>,
+  grid: Grid,
+  options: RectOptions,
+): PaintResult {
+  assertGrid(tiles, grid, options.layer);
+
+  const left = Math.min(options.from.x, options.to.x);
+  const right = Math.max(options.from.x, options.to.x);
+  const top = Math.min(options.from.y, options.to.y);
+  const bottom = Math.max(options.from.y, options.to.y);
+
+  return write(tiles, grid, options.layer, left, top, right, bottom, (x, y) =>
+    stampTile(options.stamp, left, top, x, y),
+  );
+}
+
+export interface FillOptions {
+  x: number;
+  y: number;
+  layer: number;
+  stamp: Stamp;
+}
+
+/**
+ * Balde: troca a regiao ligada que tem o mesmo tile da celula clicada.
+ *
+ * A comparacao e por familia de autotile, entao um lago inteiro conta como
+ * uma regiao so, mesmo com cada celula guardando uma forma diferente.
+ *
+ * A varredura e iterativa. Recursao aqui estouraria a pilha num mapa grande,
+ * e mapa grande e justamente onde o balde e usado.
+ */
+export function floodFill(
+  tiles: Readonly<Uint16Array>,
+  grid: Grid,
+  options: FillOptions,
+): PaintResult {
+  assertGrid(tiles, grid, options.layer);
+  if (
+    options.x < 0 ||
+    options.y < 0 ||
+    options.x >= grid.width ||
+    options.y >= grid.height
+  ) {
+    return { tiles: new Uint16Array(tiles), changed: 0 };
+  }
+
+  const at = (x: number, y: number) => tiles[index(grid, x, y, options.layer)] ?? 0;
+
+  const origin = at(options.x, options.y);
+  const originFamily = autotileFamily(origin);
+  const matches = (x: number, y: number): boolean => {
+    const value = at(x, y);
+    return originFamily === null
+      ? value === origin
+      : autotileFamily(value) === originFamily;
+  };
+
+  const region = new Set<number>();
+  const stack: [number, number][] = [[options.x, options.y]];
+  while (stack.length > 0) {
+    const [x, y] = stack.pop() as [number, number];
+    if (x < 0 || y < 0 || x >= grid.width || y >= grid.height) continue;
+
+    const key = y * grid.width + x;
+    if (region.has(key) || !matches(x, y)) continue;
+    region.add(key);
+
+    stack.push([x + 1, y], [x - 1, y], [x, y + 1], [x, y - 1]);
+  }
+
+  // O carimbo se ancora na origem do mapa, nao na celula clicada: assim o
+  // padrao fica continuo mesmo que a pessoa clique em outro ponto da regiao.
+  const next = new Uint16Array(tiles);
+  const touched: [number, number][] = [];
+  let changed = 0;
+
+  for (const key of region) {
+    const x = key % grid.width;
+    const y = Math.floor(key / grid.width);
+    const cell = index(grid, x, y, options.layer);
+    const tileId = stampTile(options.stamp, 0, 0, x, y);
+    if (next[cell] !== tileId) {
+      next[cell] = tileId;
+      changed += 1;
+    }
+    touched.push([x, y]);
+  }
+
+  if (changed === 0) return { tiles: next, changed: 0 };
+
+  refreshAround(next, grid, options.layer, touched);
+  return { tiles: next, changed };
+}
+
+/** Escreve um retangulo de celulas e recalcula os autotiles em volta. */
+function write(
+  tiles: Readonly<Uint16Array>,
+  grid: Grid,
+  layer: number,
+  left: number,
+  top: number,
+  right: number,
+  bottom: number,
+  tileOf: (x: number, y: number) => number,
+): PaintResult {
+  const next = new Uint16Array(tiles);
+  const touched: [number, number][] = [];
+  let changed = 0;
+
+  for (let y = top; y <= bottom; y += 1) {
+    for (let x = left; x <= right; x += 1) {
+      if (x < 0 || y < 0 || x >= grid.width || y >= grid.height) continue;
+
+      const cell = index(grid, x, y, layer);
+      const tileId = tileOf(x, y);
+      if (next[cell] !== tileId) {
+        next[cell] = tileId;
+        changed += 1;
+      }
+      touched.push([x, y]);
+    }
+  }
+
+  if (changed === 0) return { tiles: next, changed: 0 };
+
+  refreshAround(next, grid, layer, touched);
+  return { tiles: next, changed };
 }

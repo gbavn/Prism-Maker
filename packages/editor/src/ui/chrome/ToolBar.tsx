@@ -5,12 +5,15 @@ import {
   PaintBucket,
   Pencil,
   Square,
-  Triangle,
 } from "lucide-react";
 import { Soon } from "./Soon.jsx";
 
+export type ToolId = "pencil" | "rectangle" | "fill" | "erase";
+
 interface Props {
   mode: "draw" | "terrain";
+  tool: ToolId;
+  onTool: (tool: ToolId) => void;
   brush: number;
   onBrush: (size: number) => void;
   layer: number;
@@ -24,11 +27,14 @@ const chip =
 const idle = "text-dim hover:bg-raised hover:text-body";
 const active = "bg-brand/15 text-brand";
 
+const TOOLS = [
+  { id: "pencil", label: "Pencil", icon: Pencil },
+  { id: "rectangle", label: "Rectangle", icon: Square },
+  { id: "fill", label: "Fill", icon: PaintBucket },
+  { id: "erase", label: "Erase", icon: Eraser },
+] as const;
+
 const soonTools = [
-  { label: "Rectangle", icon: Square },
-  { label: "Fill", icon: PaintBucket },
-  { label: "Cliff", icon: Triangle },
-  { label: "Erase", icon: Eraser },
   { label: "Select", icon: MousePointer2 },
   { label: "Place", icon: MoveDiagonal },
 ] as const;
@@ -36,11 +42,14 @@ const soonTools = [
 /**
  * The tool strip.
  *
- * Wired for real: the pencil, the brush size, and the layer in Draw mode. The
- * rest holds the place it will hold, marked.
+ * In Terrain mode only the pencil is shown: raising ground a rectangle at a
+ * time is a different gesture, and pretending otherwise would put a button
+ * there that lies about what it does.
  */
 export function ToolBar({
   mode,
+  tool,
+  onTool,
   brush,
   onBrush,
   layer,
@@ -48,6 +57,8 @@ export function ToolBar({
   step,
   onSoon,
 }: Props) {
+  const tools = mode === "terrain" ? TOOLS.slice(0, 1) : TOOLS;
+
   return (
     <div className="flex items-center gap-1 rounded-lg border border-edge bg-panel px-2 py-1.5">
       {mode === "terrain" ? (
@@ -79,22 +90,33 @@ export function ToolBar({
 
       <span className="mx-1 h-5 w-px bg-edge" />
 
-      <span className={`${chip} ${active}`}>
-        <Pencil className="h-3.5 w-3.5" strokeWidth={1.8} />
-        Pencil
-      </span>
+      {tools.map((entry) => {
+        const Glyph = entry.icon;
+        return (
+          <button
+            key={entry.id}
+            type="button"
+            onClick={() => onTool(entry.id)}
+            aria-pressed={entry.id === tool}
+            className={`${chip} ${entry.id === tool ? active : idle}`}
+          >
+            <Glyph className="h-3.5 w-3.5" strokeWidth={1.8} />
+            {entry.label}
+          </button>
+        );
+      })}
 
-      {soonTools.map((tool) => {
-        const Glyph = tool.icon;
+      {soonTools.map((entry) => {
+        const Glyph = entry.icon;
         return (
           <Soon
-            key={tool.label}
-            label={tool.label}
+            key={entry.label}
+            label={entry.label}
             onSoon={onSoon}
             className={`${chip} ${idle} pr-3.5`}
           >
             <Glyph className="h-3.5 w-3.5" strokeWidth={1.8} />
-            {tool.label}
+            {entry.label}
           </Soon>
         );
       })}

@@ -105,6 +105,15 @@ export function useProject() {
     [bump],
   );
 
+  /** Corrige o passo atual do historico, para o traco todo virar uma acao so. */
+  const amend = useCallback(
+    (next: Draft) => {
+      history.current?.replace(next);
+      bump();
+    },
+    [bump],
+  );
+
   const undo = useCallback(() => {
     history.current?.undo();
     bump();
@@ -162,6 +171,7 @@ export function useProject() {
     canRedo: history.current?.canRedo ?? false,
     openMap,
     edit,
+    amend,
     undo,
     redo,
     save,

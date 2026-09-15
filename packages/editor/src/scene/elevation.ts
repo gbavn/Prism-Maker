@@ -166,6 +166,17 @@ export class History<T> {
     this.state = next;
   }
 
+  /**
+   * Troca o estado atual sem criar um passo novo.
+   *
+   * E o que faz um arrasto inteiro contar como uma acao so: o primeiro ponto
+   * empilha, o resto do traco so corrige o topo. Sem isso, desfazer depois de
+   * pintar uma rua voltaria uma celula de cada vez.
+   */
+  replace(next: T): void {
+    this.state = next;
+  }
+
   undo(): T {
     const previous = this.past.pop();
     if (previous === undefined) return this.state;

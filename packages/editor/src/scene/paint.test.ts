@@ -2,9 +2,13 @@ import { describe, expect, it } from "vitest";
 import {
   autotileFamily,
   autotileTileId,
+  fillRect,
+  floodFill,
   index,
   NEIGHBOURS_TO_SHAPE,
   paint,
+  singleStamp,
+  stampAt,
   tilesetTileId,
 } from "./paint.js";
 
@@ -209,5 +213,168 @@ describe("forma de autotile", () => {
     });
     expect(tiles[index(grid, 2, 1, 0)]).toBe(800);
     expect(tiles[index(grid, 1, 1, 0)]).toBe(800);
+  });
+});
+
+describe("carimbo", () => {
+  it("um tile só cai centrado na célula, como o lápis", () => {
+    const { tiles, changed } = stampAt(empty(), grid, {
+      x: 2,
+      y: 1,
+      layer: 0,
+      stamp: singleStamp(400),
+    });
+    expect(changed).toBe(1);
+    expect(tiles[index(grid, 2, 1, 0)]).toBe(400);
+  });
+
+  it("um tile só ainda obedece ao pincel", () => {
+    const { changed } = stampAt(empty(), grid, {
+      x: 2,
+      y: 1,
+      layer: 0,
+      stamp: singleStamp(400),
+      size: 3,
+    });
+    expect(changed).toBe(9);
+  });
+
+  it("um bloco cai com o canto na célula clicada", () => {
+    const stamp = {
+      width: 2,
+      height: 2,
+      tiles: [400, 401, 408, 409],
+    };
+    const { tiles, changed } = stampAt(empty(), grid, {
+      x: 1,
+      y: 1,
+      layer: 0,
+      stamp,
+    });
+    expect(changed).toBe(4);
+    expect(draw(tiles)).toBe(
+      [
+        "   0    0    0    0    0",
+        "   0  400  401    0    0",
+        "   0  408  409    0    0",
+        "   0    0    0    0    0",
+      ].join("\n"),
+    );
+  });
+
+  it("o bloco manda no pincel, que só vale para um tile só", () => {
+    const stamp = { width: 2, height: 1, tiles: [400, 401] };
+    const { changed } = stampAt(empty(), grid, {
+      x: 0,
+      y: 0,
+      layer: 0,
+      stamp,
+      size: 5,
+    });
+    expect(changed).toBe(2);
+  });
+});
+
+describe("retângulo", () => {
+  it("preenche entre os dois cantos, em qualquer ordem", () => {
+    const one = fillRect(empty(), grid, {
+      layer: 0,
+      stamp: singleStamp(400),
+      from: { x: 1, y: 1 },
+      to: { x: 3, y: 2 },
+    });
+    const other = fillRect(empty(), grid, {
+      layer: 0,
+      stamp: singleStamp(400),
+      from: { x: 3, y: 2 },
+      to: { x: 1, y: 1 },
+    });
+    expect(one.changed).toBe(6);
+    expect(draw(one.tiles)).toBe(draw(other.tiles));
+  });
+
+  it("repete o bloco em vez de esticar", () => {
+    const stamp = { width: 2, height: 1, tiles: [400, 401] };
+    const { tiles } = fillRect(empty(), grid, {
+      layer: 0,
+      stamp,
+      from: { x: 0, y: 0 },
+      to: { x: 4, y: 0 },
+    });
+    expect(draw(tiles).split("\n")[0]).toBe(" 400  401  400  401  400");
+  });
+
+  it("recorta na borda em vez de estourar", () => {
+    const { changed } = fillRect(empty(), grid, {
+      layer: 0,
+      stamp: singleStamp(400),
+      from: { x: 3, y: 2 },
+      to: { x: 9, y: 9 },
+    });
+    expect(changed).toBe(4);
+  });
+});
+
+describe("balde", () => {
+  it("troca a região ligada e para na borda de outro tile", () => {
+    const start = empty();
+    // Uma parede vertical no meio: o balde à esquerda não passa dela.
+    for (let y = 0; y < grid.height; y += 1) start[index(grid, 2, y, 0)] = 400;
+
+    const { tiles, changed } = floodFill(start, grid, {
+      x: 0,
+      y: 0,
+      layer: 0,
+      stamp: singleStamp(401),
+    });
+    expect(changed).toBe(grid.height * 2);
+    expect(tiles[index(grid, 3, 0, 0)]).toBe(0);
+  });
+
+  it("um lago inteiro conta como uma região só", () => {
+    // Duas células de água vizinhas já têm formas diferentes gravadas, e é
+    // por isso que a comparação é por família e não por id.
+    const start = empty();
+    const water = autotileTileId(0);
+    const grown = paint(start, grid, { x: 1, y: 1, layer: 0, tileId: water });
+    const lake = paint(grown.tiles, grid, {
+      x: 2,
+      y: 1,
+      layer: 0,
+      tileId: water,
+    });
+    expect(lake.tiles[index(grid, 1, 1, 0)]).not.toBe(
+      lake.tiles[index(grid, 2, 1, 0)],
+    );
+
+    const { changed } = floodFill(lake.tiles, grid, {
+      x: 1,
+      y: 1,
+      layer: 0,
+      stamp: singleStamp(400),
+    });
+    expect(changed).toBe(2);
+  });
+
+  it("atravessa um mapa grande sem estourar a pilha", () => {
+    const big = { width: 200, height: 200 };
+    const tiles = new Uint16Array(big.width * big.height * 3);
+    const { changed } = floodFill(tiles, big, {
+      x: 0,
+      y: 0,
+      layer: 0,
+      stamp: singleStamp(400),
+    });
+    expect(changed).toBe(big.width * big.height);
+  });
+
+  it("clicar fora do mapa não faz nada", () => {
+    const { changed } = floodFill(empty(), grid, {
+      x: 99,
+      y: 0,
+      layer: 0,
+      stamp: singleStamp(400),
+    });
+    expect(changed).toBe(0);
   });
 });

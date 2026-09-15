@@ -1,16 +1,32 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { applyBrush, levelTo } from "../scene/elevation.js";
-import { paint } from "../scene/paint.js";
+import {
+  fillRect,
+  floodFill,
+  singleStamp,
+  stampAt,
+  type Stamp,
+} from "../scene/paint.js";
 import { MapPanel } from "./chrome/MapPanel.jsx";
 import { ModeRail, type ModeId } from "./chrome/ModeRail.jsx";
 import { SOON_LABEL } from "./chrome/Soon.jsx";
 import { StatusBar } from "./chrome/StatusBar.jsx";
 import { TilePanel } from "./chrome/TilePanel.jsx";
-import { ToolBar } from "./chrome/ToolBar.jsx";
+import { ToolBar, type ToolId } from "./chrome/ToolBar.jsx";
 import { TopBar } from "./chrome/TopBar.jsx";
-import { useProject } from "./useProject.js";
+import { useProject, type Draft } from "./useProject.js";
 import { Viewport, type ViewportHandle } from "./Viewport.jsx";
 import type { PickedCell } from "./viewport/scene3d.js";
+
+/** O que um traco precisa lembrar entre o apertar e o soltar do botao. */
+interface Stroke {
+  /** O rascunho de antes do traco, que o retangulo refaz a cada movimento. */
+  base: Draft;
+  from: PickedCell;
+  erase: boolean;
+}
+
+const ERASER: Stamp = singleStamp(0);
 
 export function App() {
   const project = useProject();
@@ -18,12 +34,15 @@ export function App() {
   const viewport = useRef<ViewportHandle>(null);
 
   const [mode, setMode] = useState<ModeId>("draw");
+  const [tool, setTool] = useState<ToolId>("pencil");
   const [brush, setBrush] = useState(1);
   const [layer, setLayer] = useState(0);
-  const [tile, setTile] = useState(384);
+  const [stamp, setStamp] = useState<Stamp>(singleStamp(384));
   const [view, setView] = useState<"2d" | "3d">("2d");
   const [hovered, setHovered] = useState<PickedCell | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+
+  const stroke = useRef<Stroke | null>(null);
 
   const soon = useCallback(
     (label: string) => setMessage(`${label}: ${SOON_LABEL}`),
@@ -40,55 +59,138 @@ export function App() {
   }, [state.project, state.map, project]);
 
   /**
-   * Redraws from the current draft.
+   * Redraws from a given draft.
    *
    * The main process rebuilds the scene without re-reading the .rxdata, so a
    * brush stroke answers right away.
    */
+  const redrawWith = useCallback(
+    async (target: Draft) => {
+      const root = state.project?.root;
+      const id = state.map?.id;
+      if (root === undefined || id === undefined) return;
+
+      const scene = await window.prism.buildScene(
+        root,
+        id,
+        target.heights,
+        target.tiles,
+      );
+      viewport.current?.redraw(scene);
+    },
+    [state.project?.root, state.map?.id],
+  );
+
   const redraw = useCallback(async () => {
-    const root = state.project?.root;
-    const id = state.map?.id;
-    if (root === undefined || id === undefined || draft === null) return;
+    if (draft === null) return;
+    await redrawWith(draft);
+  }, [draft, redrawWith]);
 
-    const scene = await window.prism.buildScene(root, id, draft.heights, draft.tiles);
-    viewport.current?.redraw(scene);
-  }, [state.project?.root, state.map?.id, draft]);
-
-  const onPaint = useCallback(
-    (cell: PickedCell, secondary: boolean) => {
+  /**
+   * Runs the current tool over a draft and returns the result.
+   *
+   * Pure on purpose: the rectangle recomputes from the draft as it was when
+   * the drag started, and the pencil accumulates over the running one, so the
+   * caller decides which draft goes in.
+   */
+  const apply = useCallback(
+    (from: Draft, cell: PickedCell, at: Stroke): Draft | null => {
       const grid = state.map?.grid;
-      if (grid === undefined || draft === null) return;
+      if (grid === undefined) return null;
 
       if (mode === "terrain") {
-        const { heights, changed } = applyBrush(draft.heights, grid, {
+        const { heights, changed } = applyBrush(from.heights, grid, {
           x: cell.x,
           y: cell.y,
           size: brush,
-          delta: secondary ? -1 : 1,
+          delta: at.erase ? -1 : 1,
         });
-        if (changed === 0) return setMessage("already at the height limit");
-
-        project.edit({ heights, tiles: draft.tiles });
-        setMessage(null);
-        return;
+        if (changed === 0) {
+          setMessage("already at the height limit");
+          return null;
+        }
+        return { heights, tiles: from.tiles };
       }
 
-      // Shift erases: the same gesture that lowers terrain, which keeps the
-      // two tools consistent instead of inventing a second convention.
-      const { tiles, changed } = paint(draft.tiles, grid, {
-        x: cell.x,
-        y: cell.y,
-        layer,
-        tileId: secondary ? 0 : tile,
-        size: brush,
-      });
-      if (changed === 0) return;
+      // Shift erases whatever the tool is: the same gesture that lowers
+      // terrain, which keeps the two modes consistent instead of inventing a
+      // second convention.
+      const painting = at.erase || tool === "erase" ? ERASER : stamp;
 
-      project.edit({ heights: draft.heights, tiles });
+      const result =
+        tool === "rectangle"
+          ? fillRect(from.tiles, grid, {
+              layer,
+              stamp: painting,
+              from: at.from,
+              to: cell,
+            })
+          : tool === "fill"
+            ? floodFill(from.tiles, grid, {
+                x: cell.x,
+                y: cell.y,
+                layer,
+                stamp: painting,
+              })
+            : stampAt(from.tiles, grid, {
+                x: cell.x,
+                y: cell.y,
+                layer,
+                stamp: painting,
+                size: brush,
+              });
+
+      if (result.changed === 0) return null;
+      return { heights: from.heights, tiles: result.tiles };
+    },
+    [state.map?.grid, mode, tool, brush, layer, stamp],
+  );
+
+  const onStrokeStart = useCallback(
+    (cell: PickedCell, erase: boolean) => {
+      if (draft === null) return;
+
+      const at: Stroke = { base: draft, from: cell, erase };
+      stroke.current = at;
+
+      const next = apply(draft, cell, at);
+      if (next === null) return;
+
+      project.edit(next);
       setMessage(null);
     },
-    [state.map?.grid, draft, mode, brush, layer, tile, project],
+    [draft, apply, project],
   );
+
+  /**
+   * Continues the stroke.
+   *
+   * The whole drag is one undo step: the first cell pushes, every cell after
+   * it amends. Undoing a painted street should give the street back, not one
+   * tile of it.
+   */
+  const onStrokeMove = useCallback(
+    (cell: PickedCell) => {
+      const at = stroke.current;
+      if (at === null || draft === null) return;
+      // O balde ja pintou a regiao inteira no primeiro clique.
+      if (tool === "fill" && mode !== "terrain") return;
+
+      // O retangulo parte do rascunho de antes do traco: arrastar de volta
+      // precisa desfazer o que o retangulo maior tinha pintado.
+      const from = tool === "rectangle" && mode !== "terrain" ? at.base : draft;
+      const next = apply(from, cell, at);
+      if (next === null) return;
+
+      project.amend(next);
+      void redrawWith(next);
+    },
+    [draft, tool, mode, apply, project, redrawWith],
+  );
+
+  const onStrokeEnd = useCallback(() => {
+    stroke.current = null;
+  }, []);
 
   const doSave = useCallback(() => {
     void project
@@ -173,6 +275,11 @@ export function App() {
   const projectName =
     state.project?.root.split("/").filter(Boolean).pop() ?? "no project";
 
+  const brushLabel =
+    stamp.width === 1 && stamp.height === 1
+      ? `tile #${stamp.tiles[0] ?? 0}`
+      : `${stamp.width}×${stamp.height} block`;
+
   return (
     <div className="flex h-full bg-shell font-sans text-body">
       <ModeRail mode={mode} onMode={setMode} onSoon={soon} />
@@ -192,6 +299,8 @@ export function App() {
 
         <ToolBar
           mode={mode === "terrain" ? "terrain" : "draw"}
+          tool={mode === "terrain" ? "pencil" : tool}
+          onTool={setTool}
           brush={brush}
           onBrush={setBrush}
           layer={layer}
@@ -239,12 +348,15 @@ export function App() {
             <Viewport
               ref={viewport}
               map={state.map}
+              editable={view === "2d"}
               onHover={setHovered}
-              onPaint={onPaint}
+              onStrokeStart={onStrokeStart}
+              onStrokeMove={onStrokeMove}
+              onStrokeEnd={onStrokeEnd}
             />
           </main>
 
-          <TilePanel map={state.map} selected={tile} onSelect={setTile} />
+          <TilePanel map={state.map} stamp={stamp} onSelect={setStamp} />
         </div>
 
         <StatusBar
@@ -254,7 +366,7 @@ export function App() {
           message={
             message ??
             (mode === "draw"
-              ? `layer ${layer + 1} · tile #${tile} · click paints · shift+click erases`
+              ? `layer ${layer + 1} · ${tool} · ${brushLabel} · drag paints · shift erases`
               : null)
           }
           onSoon={soon}

@@ -18,8 +18,12 @@ export interface ViewportHandle {
 interface Props {
   map: OpenedMap | null;
   ref: React.Ref<ViewportHandle>;
+  /** Editing only happens in 2D: in 3D the left button orbits the camera. */
+  editable: boolean;
   onHover: (cell: PickedCell | null) => void;
-  onPaint: (cell: PickedCell, lower: boolean) => void;
+  onStrokeStart: (cell: PickedCell, erase: boolean) => void;
+  onStrokeMove: (cell: PickedCell) => void;
+  onStrokeEnd: () => void;
 }
 
 /**
@@ -39,10 +43,21 @@ function imagesOf(map: OpenedMap): Map<string, string> {
   return sources;
 }
 
-export function Viewport({ map, ref, onHover, onPaint }: Props) {
+export function Viewport({
+  map,
+  ref,
+  editable,
+  onHover,
+  onStrokeStart,
+  onStrokeMove,
+  onStrokeEnd,
+}: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const viewRef = useRef<View | null>(null);
-  const pressed = useRef<{ x: number; y: number } | null>(null);
+  const stroking = useRef(false);
+  // A ultima celula pintada no traco. Sem isso, arrastar dentro da mesma
+  // celula repetiria a pintura a cada pixel do movimento.
+  const lastCell = useRef<string | null>(null);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -84,35 +99,57 @@ export function Viewport({ map, ref, onHover, onPaint }: Props) {
     [map],
   );
 
+  const pick = useCallback(
+    (event: React.PointerEvent<HTMLCanvasElement>): PickedCell | null =>
+      viewRef.current?.pickCell(
+        event.nativeEvent.offsetX,
+        event.nativeEvent.offsetY,
+      ) ?? null,
+    [],
+  );
+
   const handleMove = useCallback(
     (event: React.PointerEvent<HTMLCanvasElement>) => {
-      const view = viewRef.current;
-      if (view === null) return;
-      const cell = view.pickCell(event.nativeEvent.offsetX, event.nativeEvent.offsetY);
-      view.highlight(cell);
+      const cell = pick(event);
+      viewRef.current?.highlight(cell);
       onHover(cell);
+
+      if (!stroking.current || cell === null) return;
+
+      const key = `${cell.x},${cell.y}`;
+      if (key === lastCell.current) return;
+      lastCell.current = key;
+      onStrokeMove(cell);
     },
-    [onHover],
+    [pick, onHover, onStrokeMove],
+  );
+
+  const handleDown = useCallback(
+    (event: React.PointerEvent<HTMLCanvasElement>) => {
+      if (!editable || event.button !== 0) return;
+
+      const cell = pick(event);
+      if (cell === null) return;
+
+      event.currentTarget.setPointerCapture(event.pointerId);
+      stroking.current = true;
+      lastCell.current = `${cell.x},${cell.y}`;
+      onStrokeStart(cell, event.shiftKey);
+    },
+    [editable, pick, onStrokeStart],
   );
 
   const handleUp = useCallback(
     (event: React.PointerEvent<HTMLCanvasElement>) => {
-      const start = pressed.current;
-      pressed.current = null;
-      if (start === null || event.button !== 0) return;
-
-      // Arrastar orbita a camera; so o clique parado edita.
-      const moved =
-        Math.abs(event.clientX - start.x) + Math.abs(event.clientY - start.y);
-      if (moved > 4) return;
-
-      const cell = viewRef.current?.pickCell(
-        event.nativeEvent.offsetX,
-        event.nativeEvent.offsetY,
-      );
-      if (cell) onPaint(cell, event.shiftKey);
+      if (!stroking.current) return;
+      stroking.current = false;
+      lastCell.current = null;
+      if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+        event.currentTarget.releasePointerCapture(event.pointerId);
+      }
+      onStrokeEnd();
     },
-    [onPaint],
+    [onStrokeEnd],
   );
 
   return (
@@ -120,10 +157,9 @@ export function Viewport({ map, ref, onHover, onPaint }: Props) {
       ref={canvasRef}
       className="block h-full w-full outline-none"
       onPointerMove={handleMove}
-      onPointerDown={(event) => {
-        pressed.current = { x: event.clientX, y: event.clientY };
-      }}
+      onPointerDown={handleDown}
       onPointerUp={handleUp}
+      onPointerCancel={handleUp}
     />
   );
 }

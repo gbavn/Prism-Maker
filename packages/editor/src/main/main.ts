@@ -95,38 +95,51 @@ async function rehearseEditing(window: BrowserWindow): Promise<void> {
     window.webContents.sendInputEvent(event);
   const wait = (ms: number) => new Promise((done) => setTimeout(done, ms));
 
-  // Escolhe o primeiro autotile na paleta, que e agua, e um pincel maior.
-  send({ type: "mouseMove", x: 1150, y: 175 });
-  await wait(150);
-  send({ type: "mouseDown", x: 1150, y: 175, button: "left", clickCount: 1 });
-  send({ type: "mouseUp", x: 1150, y: 175, button: "left", clickCount: 1 });
-  await wait(300);
-
-  send({ type: "keyDown", keyCode: "3" });
-  send({ type: "keyUp", keyCode: "3" });
-  await wait(200);
-
-  const spots: [number, number][] = [
-    [700, 430],
-    [700, 430],
-    [700, 430],
-    [760, 405],
-    [760, 405],
-    [640, 455],
-  ];
-
-  for (const [x, y] of spots) {
+  /** Aperta e solta o botao esquerdo num ponto. */
+  const click = async (x: number, y: number) => {
     send({ type: "mouseMove", x, y });
-    await wait(150);
+    await wait(120);
     send({ type: "mouseDown", x, y, button: "left", clickCount: 1 });
     send({ type: "mouseUp", x, y, button: "left", clickCount: 1 });
     await wait(250);
-  }
+  };
+
+  /** Arrasta de um ponto ao outro, passando pelo meio do caminho. */
+  const drag = async (from: [number, number], to: [number, number]) => {
+    const steps = 10;
+    send({ type: "mouseMove", x: from[0], y: from[1] });
+    await wait(120);
+    send({
+      type: "mouseDown", x: from[0], y: from[1], button: "left", clickCount: 1,
+    });
+    for (let step = 1; step <= steps; step += 1) {
+      const x = Math.round(from[0] + ((to[0] - from[0]) * step) / steps);
+      const y = Math.round(from[1] + ((to[1] - from[1]) * step) / steps);
+      send({ type: "mouseMove", x, y });
+      await wait(90);
+    }
+    send({ type: "mouseUp", x: to[0], y: to[1], button: "left", clickCount: 1 });
+    await wait(400);
+  };
+
+  // Escolhe o primeiro autotile da paleta, que e agua: contraste alto contra a
+  // grama, entao o print mostra na hora se a ferramenta pintou ou nao.
+  await click(1150, 175);
+
+  // Retangulo, arrastado sobre o mapa.
+  await click(315, 73);
+  await drag([470, 300], [600, 380]);
+
+  // Lapis, arrastado: um traco continuo prova que nao e um clique por celula.
+  await click(230, 73);
+  await drag([660, 300], [800, 300]);
+
+  // Bloco de tiles na paleta, escolhido arrastando sobre o tileset.
+  await drag([1085, 505], [1145, 560]);
 
   // Deixa o cursor parado sobre uma celula para o destaque aparecer.
   send({ type: "mouseMove", x: 700, y: 430 });
   await wait(400);
-
 }
 
 async function captureAndQuit(

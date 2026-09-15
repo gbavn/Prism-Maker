@@ -205,8 +205,10 @@ export function createViewport(canvas: HTMLCanvasElement): Viewport {
       orthoSpan = (span / 2) * 1.08;
       camera.position.set(center.x, span, center.z);
       controls.enableRotate = false;
+      // O botao esquerdo fica livre para as ferramentas. Em 2D se edita, em 3D
+      // se olha: e por isso que aqui a camera anda pelo direito e pelo meio.
       controls.mouseButtons = {
-        LEFT: MOUSE.PAN,
+        LEFT: null,
         MIDDLE: MOUSE.DOLLY,
         RIGHT: MOUSE.PAN,
       };
