@@ -152,7 +152,9 @@ Armadilhas já pagas na viewport, todas descobertas rodando o app:
   cor do tile vizinho no atlas;
 - texturas ficam em cache vivo enquanto a viewport existir. Recarregar a cada
   redesenho cria corrida: a pincelada seguinte descarta a textura que o
-  redesenho anterior ainda usava;
+  redesenho anterior ainda usava. O preço é que o cache assume arquivo imóvel:
+  ao reassar um objeto, é preciso esquecer aquela URL, senão a viewport segue
+  mostrando a imagem velha;
 - tile é plano, então levantar uma célula deixa buraco. As paredes de degrau
   (`skirts`) fecham o vão, e saem escurecidas porque material sem iluminação
   não dá nenhuma pista de profundidade;
@@ -183,16 +185,29 @@ como último passo.
 O que existe hoje é o caminho que funciona sem tocar no motor:
 
 1. O editor modela o objeto em 3D (`scene/model.ts`, descrição pura em caixas).
-2. Assa uma imagem com Three, fora da tela, em câmera **ortográfica** a 42
-   graus (`ui/viewport/bake.ts`). Ortográfica porque o tileset do Essentials é
-   desenhado sem fuga de ponto, e perspectiva daria um ponto de fuga por
-   objeto. Ambiente baixo e sol forte, senão todas as faces saem com o mesmo
-   brilho e o objeto vira adesivo.
-3. Grava o PNG em `Graphics/Objects/` e a colocação **dentro do próprio
+2. Assa uma imagem com Three, fora da tela, em câmera **ortográfica** a 45
+   graus (`ui/viewport/bake.ts`). Ortográfica porque o chão do mapa é desenhado
+   assim: o tileset do Essentials não tem fuga de ponto, e um objeto assado em
+   outra projeção discorda do chão em que pisa. Perspectiva de verdade exigiria
+   desenhar o chão junto, em perspectiva, que é o que só o fork do mkxp-z
+   resolve.
+3. O que dá volume, já que a projeção é fixa, são três coisas: o objeto
+   **girado no próprio eixo** (`yaw`), que mostra a lateral além da frente;
+   ambiente baixo com sol forte, senão todas as faces saem com o mesmo brilho;
+   e a **sombra projetada no chão**, que prende o objeto ao terreno. Gira o
+   objeto, nunca a câmera: a câmera é a do mapa, e girá-la faria a projeção do
+   objeto brigar com a do chão. Caminhão estacionado de lado é natural, chão de
+   lado não é.
+4. Grava o PNG em `Graphics/Objects/` e a colocação **dentro do próprio
    `.rxdata`**, na ivar `@prism_objects` do `RPG::Map`. O Marshal preserva
    qualquer ivar e o RPG Maker XP ignora o que não conhece, então o projeto
    continua abrindo no editor original e no jogo sem o plugin.
-4. `Plugins/Prism/` lê essa ivar e cria um `Sprite` por objeto, entregue ao
+
+   Junto vai a **âncora**: em que pixel da imagem cai o canto sudoeste da área
+   no chão. Sem ela o encaixe seria adivinhação, porque a imagem tem margem
+   para a sombra caber e o objeto girado não encosta nas bordas dela. Com ela,
+   posicionar é uma subtração, e vale para qualquer modelo, giro ou tamanho.
+5. `Plugins/Prism/` lê essa ivar e cria um `Sprite` por objeto, entregue ao
    `Spriteset_Map` pelo gancho oficial `:on_new_spriteset_map`. O spriteset
    passa a atualizar e descartar cada um, então não há alias em script do kit.
 

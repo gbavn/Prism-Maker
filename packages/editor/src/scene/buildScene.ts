@@ -41,11 +41,14 @@ export interface PlacedObject {
   y: number;
   width: number;
   depth: number;
+  /** Onde o canto sudoeste da area cai dentro da imagem, em pixels. */
+  anchorX: number;
+  anchorY: number;
 }
 
 /** Um objeto ja posicionado no mundo, pronto para desenhar. */
 export interface SceneObject extends PlacedObject {
-  /** Centro da area no chao, em unidades de mundo. */
+  /** Canto oeste da area no chao, em unidades de mundo. */
   centreX: number;
   /** Borda sul da area no chao, onde a imagem se apoia. */
   footZ: number;
@@ -244,7 +247,8 @@ export function buildScene(input: BuildSceneInput): BuiltScene {
 
     return {
       ...object,
-      centreX: (object.x + (object.width - 1) / 2) * tileSize,
+      // Canto sudoeste da area reservada, que e onde a ancora da imagem cai.
+      centreX: object.x * tileSize - tileSize / 2,
       footZ: (object.y + object.depth - 1) * tileSize + tileSize / 2,
       base,
     };

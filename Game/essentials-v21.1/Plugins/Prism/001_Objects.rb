@@ -51,10 +51,16 @@ end
 class Prism_ObjectSprite < Sprite
   def initialize(viewport, map, data)
     super(viewport)
-    @map    = map
-    @cell_x = data[:x].to_i
-    @cell_y = data[:y].to_i
-    @depth  = [data[:depth].to_i, 1].max
+    @map      = map
+    @cell_x   = data[:x].to_i
+    @cell_y   = data[:y].to_i
+    @depth    = [data[:depth].to_i, 1].max
+    # Onde, dentro da imagem, fica o canto sudoeste da area no chao. E o
+    # editor quem calcula: a imagem tem margem para a sombra caber, e o objeto
+    # girado nao encosta nas bordas dela, entao apoiar pelo rodape da imagem
+    # erraria a posicao.
+    @anchor_x = data[:anchor_x].to_i
+    @anchor_y = data[:anchor_y].to_i
 
     self.bitmap = RPG::Cache.load_bitmap(Prism::OBJECT_FOLDER, data[:name].to_s)
     update
@@ -67,6 +73,7 @@ class Prism_ObjectSprite < Sprite
     # Posicao na tela: a celula em pixels menos o quanto o mapa ja rolou. O
     # display_x do RGSS vem em quartos de pixel, dai a divisao por
     # X_SUBPIXELS, que e a mesma conta que o Spriteset_Map faz.
+    # Canto oeste da area, em pixels de tela.
     left = (@cell_x * Game_Map::TILE_WIDTH) -
            (@map.display_x / Game_Map::X_SUBPIXELS).round
     # A borda de baixo da area no chao, onde a imagem se apoia. Imagem mais
@@ -74,8 +81,9 @@ class Prism_ObjectSprite < Sprite
     foot = ((@cell_y + @depth) * Game_Map::TILE_HEIGHT) -
            (@map.display_y / Game_Map::Y_SUBPIXELS).round
 
-    self.x = left
-    self.y = foot - bitmap.height
+    # A ancora da imagem cai exatamente no canto sudoeste da area no chao.
+    self.x = left - @anchor_x
+    self.y = foot - @anchor_y
 
     # Mesma regra de profundidade dos personagens: quem esta mais ao sul
     # desenha por cima. E o que faz o jogador passar atras do objeto ao andar

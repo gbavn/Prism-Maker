@@ -307,6 +307,8 @@ function readObjects(bytes: Uint8Array): PlacedObject[] {
     const y = field("y");
     const width = field("width");
     const depth = field("depth");
+    const anchorX = field("anchor_x");
+    const anchorY = field("anchor_y");
 
     if (
       !(name instanceof RubyString) ||
@@ -317,7 +319,15 @@ function readObjects(bytes: Uint8Array): PlacedObject[] {
     ) {
       continue;
     }
-    objects.push({ name: name.text, x, y, width, depth });
+    objects.push({
+      name: name.text,
+      x,
+      y,
+      width,
+      depth,
+      anchorX: typeof anchorX === "number" ? anchorX : 0,
+      anchorY: typeof anchorY === "number" ? anchorY : 0,
+    });
   }
   return objects;
 }
@@ -451,6 +461,8 @@ export function saveObjects(
     entry.set(new RubySymbol("y"), object.y);
     entry.set(new RubySymbol("width"), object.width);
     entry.set(new RubySymbol("depth"), object.depth);
+    entry.set(new RubySymbol("anchor_x"), object.anchorX);
+    entry.set(new RubySymbol("anchor_y"), object.anchorY);
     return entry;
   });
 

@@ -16,6 +16,7 @@ export interface ViewportHandle {
   redraw: (scene: BuiltScene) => void;
   highlight: (cell: PickedCell | null) => void;
   setZoom: (zoom: Zoom) => void;
+  forgetAsset: (url: string) => void;
   setGrid: (on: boolean) => void;
   setActiveLayer: (layer: number | null) => void;
   setEventMarks: (on: boolean) => void;
@@ -115,6 +116,7 @@ export function Viewport({
       },
       highlight: (cell) => viewRef.current?.highlight(cell),
       setZoom: (zoom) => viewRef.current?.setZoom(zoom),
+      forgetAsset: (url) => viewRef.current?.forgetAsset(url),
       setGrid: (on) => viewRef.current?.setGrid(on),
       setActiveLayer: (layer) => viewRef.current?.setActiveLayer(layer),
       setEventMarks: (on) => viewRef.current?.setEventMarks(on),

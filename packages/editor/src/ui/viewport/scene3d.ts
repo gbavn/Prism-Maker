@@ -103,6 +103,8 @@ export interface Viewport {
   highlight(cell: PickedCell | null, area?: HighlightArea): void;
   /** Escala do 2D: 1 e um tile por 32 pixels de tela, "fit" cabe o mapa todo. */
   setZoom(zoom: Zoom): void;
+  /** Esquece uma imagem em cache, para reler do disco no proximo desenho. */
+  forgetAsset(url: string): void;
   /** Liga a grade de celulas, que so aparece em 2D. */
   setGrid(on: boolean): void;
   /** Camada em foco no modo Draw. As outras saem apagadas. */
@@ -217,6 +219,12 @@ export function createViewport(canvas: HTMLCanvasElement): Viewport {
    * usam charset quase transparente de proposito, porque no jogo eles nao
    * devem aparecer. No editor eles precisam.
    */
+  /** Os objetos 3D assados, com o tamanho da imagem que cada um usa. */
+  const placed: {
+    mesh: Mesh;
+    object: BuiltScene["objects"][number];
+    size: CharsetImageSize;
+  }[] = [];
   const marks: { mesh: Mesh; id: number }[] = [];
   let marksOn = false;
   let selected: number | null = null;
@@ -316,6 +324,7 @@ export function createViewport(canvas: HTMLCanvasElement): Viewport {
     const all = [
       ...meshes,
       ...sprites.map((entry) => entry.mesh),
+      ...placed.map((entry) => entry.mesh),
       ...marks.map((entry) => entry.mesh),
     ];
     for (const mesh of all) {
@@ -325,6 +334,7 @@ export function createViewport(canvas: HTMLCanvasElement): Viewport {
     }
     meshes.length = 0;
     sprites.length = 0;
+    placed.length = 0;
     marks.length = 0;
     geometries.clear();
   }
@@ -430,6 +440,20 @@ export function createViewport(canvas: HTMLCanvasElement): Viewport {
     }
     controls.update();
     resize();
+  }
+
+  /**
+   * Descarta uma textura do cache.
+   *
+   * O cache existe para nao recarregar imagem a cada pincelada, e assume que
+   * o arquivo nao muda. Quando o editor reassa um objeto, muda: sem isto, a
+   * viewport seguiria mostrando a imagem antiga ate reabrir o programa.
+   */
+  function forgetAsset(url: string): void {
+    const texture = textureCache.get(url);
+    if (texture === undefined) return;
+    textureCache.delete(url);
+    texture.dispose();
   }
 
   function setZoom(next: Zoom): void {
@@ -593,26 +617,49 @@ export function createViewport(canvas: HTMLCanvasElement): Viewport {
       mesh.name = `object:${object.name}`;
       mesh.renderOrder = 5;
       scene.add(mesh);
+      placed.push({ mesh, object, size });
+    }
 
-      // Entra na mesma lista dos sprites de evento: os dois seguem a camera
-      // do mesmo jeito, deitados em 2D e em pe em 3D.
-      sprites.push({
-        mesh,
-        billboard: {
-          id: -1,
-          name: object.name,
-          cellX: object.x,
-          cellY: object.y + object.depth - 1,
-          x: object.centreX,
-          z: object.footZ - target.tileSize / 2,
-          base: object.base,
-          characterName: "",
-          direction: 2,
-          pattern: 0,
-          tileId: 0,
-          opacity: 255,
-        },
-      });
+    layoutObjects(target);
+  }
+
+  /**
+   * Poe os objetos no lugar pela ancora.
+   *
+   * A imagem tem margem, e o objeto girado nao encosta nas bordas dela, entao
+   * apoiar pelo rodape da imagem erraria a posicao. A ancora diz qual pixel da
+   * imagem e o canto sudoeste da area no chao, e o resto e subtracao.
+   */
+  function layoutObjects(target: BuiltScene): void {
+    const unit = target.tileSize / TILE_PIXELS;
+
+    for (const { mesh, object, size } of placed) {
+      const width = size.width * unit;
+      const height = size.height * unit;
+
+      // Canto da imagem, a partir do ponto de ancoragem no mundo.
+      const left = object.centreX - object.anchorX * unit;
+
+      mesh.scale.set(width, height, 1);
+      mesh.rotation.set(mode === "2d" ? -Math.PI / 2 : 0, 0, 0);
+
+      if (mode === "2d") {
+        // Deitado: a altura da imagem corre para o norte a partir da ancora.
+        const bottom = object.footZ + (size.height - object.anchorY) * unit;
+        mesh.position.set(
+          left + width / 2,
+          object.base + LAYER_GAP * 4,
+          bottom - height / 2,
+        );
+      } else {
+        // Em pe: a linha da ancora fica no chao, e a sombra assada fica
+        // abaixo dela, enterrada, que e onde ela some sozinha.
+        mesh.position.set(
+          left + width / 2,
+          object.base + (object.anchorY * unit) - height / 2,
+          object.footZ,
+        );
+      }
     }
   }
 
@@ -628,14 +675,9 @@ export function createViewport(canvas: HTMLCanvasElement): Viewport {
     sizes: ReadonlyMap<string, CharsetImageSize>,
   ): void {
     for (const { mesh, billboard } of sprites) {
-      // Objeto assado usa a imagem inteira; evento usa um frame do charset.
-      const whole = mesh.name.startsWith("object:")
-        ? sizes.get(objectKey(billboard.name))
-        : undefined;
-      const source = whole ? null : spriteSource(billboard, sizes);
-      const frame = whole
-        ? { x: 0, y: 0, width: whole.width, height: whole.height }
-        : source === null || source.kind === "marker"
+      const source = spriteSource(billboard, sizes);
+      const frame =
+        source.kind === "marker"
           ? { x: 0, y: 0, width: 16, height: 16 }
           : source.frame;
 
@@ -643,7 +685,7 @@ export function createViewport(canvas: HTMLCanvasElement): Viewport {
       mesh.scale.set(at.width, at.height, 1);
       mesh.position.set(at.x, at.y, at.z);
       // O marcador nao tem pe: ele marca a celula, entao fica no meio dela.
-      if (source?.kind === "marker" && mode === "2d") {
+      if (source.kind === "marker" && mode === "2d") {
         mesh.position.z = billboard.z;
       }
       mesh.rotation.set(mode === "2d" ? -Math.PI / 2 : 0, 0, 0);
@@ -915,6 +957,7 @@ export function createViewport(canvas: HTMLCanvasElement): Viewport {
     framedFor = "";
     paintGrid();
     if (built !== null) {
+      layoutObjects(built);
       layoutEvents(built, lastSizes);
       frame(built);
     } else {
@@ -946,6 +989,7 @@ export function createViewport(canvas: HTMLCanvasElement): Viewport {
     pickCell,
     highlight,
     setZoom,
+    forgetAsset,
     setGrid,
     setActiveLayer,
     setEventMarks,

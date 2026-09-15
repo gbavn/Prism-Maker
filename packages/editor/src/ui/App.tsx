@@ -10,7 +10,8 @@ import {
   type Stamp,
 } from "../scene/paint.js";
 import { EventPanel } from "./chrome/EventPanel.jsx";
-import { foodTruck } from "../scene/model.js";
+import { foodTruck, footprint } from "../scene/model.js";
+import { assetUrl } from "../shared/ipc.js";
 import { bakeModel } from "./viewport/bake.js";
 import { MapPanel } from "./chrome/MapPanel.jsx";
 import { ModeRail, type ModeId } from "./chrome/ModeRail.jsx";
@@ -188,15 +189,23 @@ export function App() {
         try {
           const model = foodTruck();
           const baked = bakeModel(model);
+          const area = footprint(model);
           const object = {
             name: model.name,
             x: cell.x,
             y: cell.y,
-            width: model.footprint.width,
-            depth: model.footprint.depth,
+            width: area.width,
+            depth: area.depth,
+            anchorX: baked.anchorX,
+            anchorY: baked.anchorY,
           };
 
           await window.prism.placeObject(root, id, object, baked.png);
+          // A imagem acabou de mudar no disco, e o cache da viewport guarda a
+          // anterior pela mesma URL.
+          viewport.current?.forgetAsset(
+            assetUrl(`Graphics/Objects/${model.name}.png`),
+          );
           setMessage(`placed ${model.name} at ${cell.x},${cell.y}`);
           await project.openMap(id);
         } catch (error) {
@@ -434,7 +443,12 @@ export function App() {
   // A área que a ferramenta cobriria, para o cursor mostrar antes de pintar.
   const area =
     mode === "draw" && tool === "place"
-      ? { left: 0, top: 0, width: 3, height: 2 }
+      ? {
+          left: 0,
+          top: 0,
+          width: footprint(foodTruck()).width,
+          height: footprint(foodTruck()).depth,
+        }
       : mode === "terrain"
       ? brushFootprint(singleStamp(0), brush)
       : mode === "events"
