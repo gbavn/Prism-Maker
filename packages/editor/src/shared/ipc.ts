@@ -7,6 +7,7 @@ export const IPC = {
   openMap: "prism:open-map",
   buildScene: "prism:build-scene",
   saveElevation: "prism:save-elevation",
+  saveTiles: "prism:save-tiles",
 } as const;
 
 /**
@@ -24,7 +25,14 @@ export interface PrismApi {
     root: string,
     id: number,
     heights: readonly number[],
+    tiles?: Uint16Array,
   ): Promise<BuiltScene>;
+  /** Grava a grade de tiles de volta no .rxdata. */
+  saveTiles(
+    root: string,
+    id: number,
+    tiles: Uint16Array,
+  ): Promise<{ path: string; cells: number }>;
   saveElevation(
     root: string,
     id: number,

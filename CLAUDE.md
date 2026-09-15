@@ -59,8 +59,16 @@ por divisórias, e acento violeta. Layout de editor de mapa é convenção do
 gênero e não há problema em segui-la, mas a aparência não deve lembrar nenhuma
 ferramenta específica.
 
-Elevação: clique sobe, shift mais clique desce, teclas 1 2 3 trocam o pincel,
-L nivela o bloco, ctrl+Z desfaz, ctrl+S grava o `.scene.json`.
+Modo **Draw**: escolha o tile na paleta da direita, clique pinta, shift mais
+clique apaga, e o seletor de camada escolhe entre as três do XP. Grava no
+`.rxdata`.
+
+Modo **Terrain**: clique sobe, shift mais clique desce, L nivela o bloco.
+Grava no `.scene.json`.
+
+Comum aos dois: teclas 1 2 3 trocam o pincel, ctrl+Z desfaz, ctrl+S grava. O
+desfazer é um só para os dois modos, porque quem aperta ctrl+Z espera voltar a
+última coisa que fez, não a última coisa que fez naquela ferramenta.
 
 Para provar que o editor renderiza sem ter tela, existe um smoke test com
 imagem: `PRISM_SMOKE_SHOT=/caminho/saida.png` faz o app subir, esperar a
@@ -81,10 +89,31 @@ Armadilhas já pagas na viewport, todas descobertas rodando o app:
 - tile é plano, então levantar uma célula deixa buraco. As paredes de degrau
   (`skirts`) fecham o vão, e saem escurecidas porque material sem iluminação
   não dá nenhuma pista de profundidade;
-- autotile **não** se resolve olhando vizinhos: o RPG Maker já grava a forma
-  no próprio tile id, e basta `tileId % 48`. A montagem dos quatro quartos vem
-  da tabela `AUTOTILE_PATTERNS` do Essentials, dentro do `Scripts.rxdata`.
-  Autotile com 32 pixels de altura não tem forma, só quadros de animação.
+- autotile **não** se resolve olhando vizinhos para **desenhar**: o RPG Maker
+  já grava a forma no próprio tile id, e basta `tileId % 48`. A montagem dos
+  quatro quartos vem da tabela `AUTOTILE_PATTERNS` do Essentials, dentro do
+  `Scripts.rxdata`. Autotile com 32 pixels de altura não tem forma, só quadros
+  de animação;
+- ao **pintar**, aí sim a vizinhança importa: a forma é recalculada pela
+  tabela `NEIGHBORS_TO_AUTOTILE_INDEX`, também do Essentials. A comparação é
+  por família de autotile, não por tile id exato, senão cada célula se acharia
+  sozinha. Fora do mapa conta como igual, que é o que evita borda desenhada no
+  limite do mapa.
+
+## Escrita no projeto do usuário
+
+Gravar no `.rxdata` é a operação de maior risco do editor, e tem três
+proteções que não podem ser removidas por conveniência:
+
+1. **Backup na primeira escrita da sessão**, em `.prism/backups/<data-hora>/`.
+2. **Escrita atômica**: arquivo temporário mais rename, para que uma queda no
+   meio não deixe um `.rxdata` pela metade.
+3. **Recusa se o arquivo mudou em disco** depois de aberto aqui, para não
+   apagar edição feita no RPG Maker com o editor aberto.
+
+O documento inteiro é lido, só a `Table` é alterada e o resto sai como entrou.
+Nunca reconstrua o documento a partir dos tipos do parser: isso descartaria em
+silêncio qualquer campo que ele não conheça.
 
 Versão alvo fixada: Essentials v21.1 (30/07/2023), a última estável.
 A v22 segue em desenvolvimento, sem data de lançamento.

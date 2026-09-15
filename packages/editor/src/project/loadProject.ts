@@ -1,9 +1,22 @@
-import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
 import {
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  renameSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
+import { basename, join } from "node:path";
+import {
+  dump,
+  load,
   loadMap,
   loadMapInfos,
   loadTilesets,
+  RubyObject,
+  Table,
   type RPGMap,
   type RPGTileset,
 } from "@prism/rxdata-parser";
@@ -16,6 +29,7 @@ import {
   type Scene,
 } from "@prism/scene-format";
 import { buildScene, type BuiltScene } from "../scene/buildScene.js";
+import { MAP_LAYERS } from "@prism/scene-format";
 
 /**
  * Abertura de um projeto Essentials do disco.
@@ -48,6 +62,8 @@ export interface OpenedMap {
   /** Altura de cada celula em degraus, na ordem de varredura do XP. */
   heights: number[];
   graphics: MapGraphics;
+  /** Grade de tiles, largura por altura por três camadas, na ordem do XP. */
+  tiles: Uint16Array;
   scene: BuiltScene;
 }
 
@@ -187,12 +203,24 @@ export function rebuildScene(
   root: string,
   id: number,
   heights: readonly number[],
+  tiles?: Uint16Array,
 ): BuiltScene {
   const entry = loaded.get(cacheKey(root, id)) ?? readMapAndTileset(root, id);
   loaded.set(cacheKey(root, id), entry);
 
+  // Com tiles novos, a cena é construída sobre uma grade temporária. O mapa em
+  // cache continua com o que está em disco, porque é ele que vai ser
+  // reescrito na gravação e misturar os dois perderia a referência.
+  const map =
+    tiles === undefined
+      ? entry.map
+      : {
+          ...entry.map,
+          data: new Table(3, entry.map.width, entry.map.height, MAP_LAYERS, tiles),
+        };
+
   return buildScene({
-    map: entry.map,
+    map,
     tileset: entry.tileset,
     project: loadManifest(root),
     heights,
@@ -202,6 +230,7 @@ export function rebuildScene(
 export function openMap(root: string, id: number): OpenedMap {
   const entry = readMapAndTileset(root, id);
   loaded.set(cacheKey(root, id), entry);
+  rememberMtime(root, id);
   const { map, tileset } = entry;
 
   const infos = loadMapInfos(readBytes(dataPath(root, "MapInfos.rxdata")));
@@ -215,6 +244,7 @@ export function openMap(root: string, id: number): OpenedMap {
     name: infos.get(id)?.name ?? `Map${id}`,
     grid: { width: map.width, height: map.height },
     graphics: mapGraphics(root, tileset),
+    tiles: new Uint16Array(map.data.data),
     heights,
     scene: buildScene({ map, tileset, project: loadManifest(root), heights }),
   };
@@ -268,4 +298,103 @@ export function saveElevation(
   writeFileSync(path, `${JSON.stringify(validated, null, 2)}\n`, "utf8");
 
   return { path, cells: heights.length };
+}
+
+/**
+ * Pasta de backup da sessão.
+ *
+ * Uma por execução do editor, e não uma por gravação: quem quer voltar atrás
+ * quer o estado de antes de mexer, não trinta cópias intermediárias.
+ */
+const sessionStamp = new Date().toISOString().replace(/[:.]/g, "-");
+const backedUp = new Set<string>();
+
+/**
+ * Copia o arquivo antes da primeira escrita da sessão.
+ *
+ * É a rede de segurança que faz valer a pena escrever no .rxdata: mesmo que
+ * tudo dê errado, o original da sessão está a um `cp` de distância.
+ */
+function backupOnce(root: string, relative: string): void {
+  const key = `${root}\u0000${relative}`;
+  if (backedUp.has(key)) return;
+
+  const source = join(root, relative);
+  if (!existsSync(source)) return;
+
+  const folder = join(root, ".prism", "backups", sessionStamp);
+  mkdirSync(folder, { recursive: true });
+  copyFileSync(source, join(folder, basename(relative)));
+  backedUp.add(key);
+}
+
+/** Quando cada arquivo foi lido, para detectar edição por fora. */
+const readAt = new Map<string, number>();
+
+function rememberMtime(root: string, id: number): void {
+  const path = dataPath(root, mapFileName(id));
+  if (existsSync(path)) readAt.set(cacheKey(root, id), statSync(path).mtimeMs);
+}
+
+function assertUnchanged(root: string, id: number): void {
+  const seen = readAt.get(cacheKey(root, id));
+  const path = dataPath(root, mapFileName(id));
+  if (seen === undefined || !existsSync(path)) return;
+
+  if (statSync(path).mtimeMs !== seen) {
+    throw new Error(
+      `o mapa ${id} mudou em disco depois que foi aberto aqui; ` +
+        "reabra o mapa antes de gravar para não apagar a edição de fora",
+    );
+  }
+}
+
+/**
+ * Escreve a grade de tiles de volta no .rxdata.
+ *
+ * O documento inteiro é lido, só a Table é alterada e o resto sai como
+ * entrou. Isso importa porque o .rxdata guarda muito mais que tiles: eventos,
+ * áudio, encontros. Reconstruir o documento a partir dos nossos tipos
+ * descartaria em silêncio qualquer campo que o parser não conheça, e o teste
+ * de ida e volta byte a byte é o que garante que a reescrita é fiel.
+ */
+export function saveTiles(
+  root: string,
+  id: number,
+  tiles: Uint16Array,
+): { path: string; cells: number } {
+  assertUnchanged(root, id);
+
+  const relative = join("Data", mapFileName(id));
+  const source = join(root, relative);
+  const document = load(readBytes(source));
+
+  if (!(document instanceof RubyObject) || document.className !== "RPG::Map") {
+    throw new Error(`${mapFileName(id)} não é um RPG::Map`);
+  }
+
+  const table = document.get("data");
+  if (!(table instanceof Table)) {
+    throw new Error(`${mapFileName(id)} não tem a grade de tiles`);
+  }
+  if (table.data.length !== tiles.length) {
+    throw new Error(
+      `a grade tem ${tiles.length} células, mas o mapa tem ${table.data.length}`,
+    );
+  }
+
+  backupOnce(root, relative);
+  table.data.set(tiles);
+
+  // Escrita atômica: um arquivo temporário e um rename. Sem isso, uma queda no
+  // meio da escrita deixaria um .rxdata pela metade, e o projeto não abriria
+  // mais nem aqui nem no RPG Maker.
+  const temporary = `${source}.prism-tmp`;
+  writeFileSync(temporary, dump(document));
+  renameSync(temporary, source);
+
+  loaded.delete(cacheKey(root, id));
+  rememberMtime(root, id);
+
+  return { path: source, cells: tiles.length };
 }

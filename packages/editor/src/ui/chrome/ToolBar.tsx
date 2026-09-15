@@ -10,8 +10,11 @@ import {
 import { Soon } from "./Soon.jsx";
 
 interface Props {
+  mode: "draw" | "terrain";
   brush: number;
   onBrush: (size: number) => void;
+  layer: number;
+  onLayer: (layer: number) => void;
   step: number;
   onSoon: (label: string) => void;
 }
@@ -31,17 +34,48 @@ const soonTools = [
 ] as const;
 
 /**
- * Tools for the Terrain mode.
+ * The tool strip.
  *
- * Wired for real: the height step, the pencil and the brush size. The rest
- * holds the place it will hold, marked.
+ * Wired for real: the pencil, the brush size, and the layer in Draw mode. The
+ * rest holds the place it will hold, marked.
  */
-export function ToolBar({ brush, onBrush, step, onSoon }: Props) {
+export function ToolBar({
+  mode,
+  brush,
+  onBrush,
+  layer,
+  onLayer,
+  step,
+  onSoon,
+}: Props) {
   return (
     <div className="flex items-center gap-1 rounded-lg border border-edge bg-panel px-2 py-1.5">
-      <span className="rounded-md bg-raised px-2 py-1 font-mono text-[11px] text-dim">
-        step {step}
-      </span>
+      {mode === "terrain" ? (
+        <span className="rounded-md bg-raised px-2 py-1 font-mono text-[11px] text-dim">
+          step {step}
+        </span>
+      ) : (
+        <>
+          <span className="text-[11px] text-dim">Layer</span>
+          <div className="flex overflow-hidden rounded-md border border-edge">
+            {[0, 1, 2].map((value) => (
+              <button
+                key={value}
+                type="button"
+                onClick={() => onLayer(value)}
+                aria-pressed={value === layer}
+                className={`px-2.5 py-1 font-mono text-[11px] transition-colors ${
+                  value === layer
+                    ? "bg-brand/20 text-brand"
+                    : "text-dim hover:bg-raised hover:text-body"
+                }`}
+              >
+                {value + 1}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
 
       <span className="mx-1 h-5 w-px bg-edge" />
 

@@ -8,6 +8,7 @@ import {
   openProject,
   rebuildScene,
   saveElevation,
+  saveTiles,
 } from "../project/loadProject.js";
 import { IPC } from "../shared/ipc.js";
 
@@ -50,8 +51,14 @@ ipcMain.handle(IPC.openMap, (_event, root: string, id: number) =>
 
 ipcMain.handle(
   IPC.buildScene,
-  (_event, root: string, id: number, heights: number[]) =>
-    rebuildScene(root, id, heights),
+  (_event, root: string, id: number, heights: number[], tiles?: Uint16Array) =>
+    rebuildScene(root, id, heights, tiles),
+);
+
+ipcMain.handle(
+  IPC.saveTiles,
+  (_event, root: string, id: number, tiles: Uint16Array) =>
+    saveTiles(root, id, tiles),
 );
 
 ipcMain.handle(
@@ -88,7 +95,13 @@ async function rehearseEditing(window: BrowserWindow): Promise<void> {
     window.webContents.sendInputEvent(event);
   const wait = (ms: number) => new Promise((done) => setTimeout(done, ms));
 
-  // Pincel 5 por 5, que deixa o degrau visivel no print.
+  // Escolhe o primeiro autotile na paleta, que e agua, e um pincel maior.
+  send({ type: "mouseMove", x: 1150, y: 175 });
+  await wait(150);
+  send({ type: "mouseDown", x: 1150, y: 175, button: "left", clickCount: 1 });
+  send({ type: "mouseUp", x: 1150, y: 175, button: "left", clickCount: 1 });
+  await wait(300);
+
   send({ type: "keyDown", keyCode: "3" });
   send({ type: "keyUp", keyCode: "3" });
   await wait(200);

@@ -16,7 +16,7 @@ import { Soon } from "./Soon.jsx";
  * actually needs it, and it scales to more modes without the row wrapping.
  */
 export const MODES = [
-  { id: "draw", label: "Draw", icon: Brush, ready: false },
+  { id: "draw", label: "Draw", icon: Brush, ready: true },
   { id: "terrain", label: "Terrain", icon: Mountain, ready: true },
   { id: "events", label: "Events", icon: Users, ready: false },
   { id: "map", label: "Map", icon: MapIcon, ready: false },

@@ -1,16 +1,19 @@
 import {
   copyFileSync,
+  existsSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   rmSync,
+  utimesSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { openMap, openProject, saveElevation } from "./loadProject.js";
+import { openMap, openProject, saveElevation, saveTiles } from "./loadProject.js";
 
 const sourceData = fileURLToPath(
   new URL("../../../../Game/essentials-v21.1/Data/", import.meta.url),
@@ -118,5 +121,69 @@ describe("gravar elevacao", () => {
 
   it("recusa elevacao do tamanho errado", () => {
     expect(() => saveElevation(root, 2, [1, 2, 3])).toThrow(/3 celulas.*32x21/);
+  });
+});
+
+describe("gravar tiles no .rxdata", () => {
+  it("escreve e lê de volta a mesma grade", () => {
+    const opened = openMap(root, 2);
+    const tiles = new Uint16Array(opened.tiles);
+    // Três células escolhidas em camadas diferentes.
+    tiles[0] = 800;
+    tiles[32 * 21 + 5] = 0;
+    tiles[2 * 32 * 21 + 10] = 1200;
+
+    const result = saveTiles(root, 2, tiles);
+    expect(result.cells).toBe(32 * 21 * 3);
+
+    const reopened = openMap(root, 2);
+    expect(reopened.tiles[0]).toBe(800);
+    expect(reopened.tiles[32 * 21 + 5]).toBe(0);
+    expect(reopened.tiles[2 * 32 * 21 + 10]).toBe(1200);
+  });
+
+  it("preserva tudo que não é tile", () => {
+    // Os eventos são o que mais importa aqui: eles vivem no mesmo arquivo, e
+    // uma gravação que os perdesse destruiria o trabalho de quem usa.
+    const before = openMap(root, 2);
+    const events = before.scene.billboards.map((b) => `${b.id}:${b.name}:${b.x},${b.z}`);
+
+    saveTiles(root, 2, new Uint16Array(before.tiles));
+
+    const after = openMap(root, 2);
+    expect(after.scene.billboards.map((b) => `${b.id}:${b.name}:${b.x},${b.z}`)).toEqual(
+      events,
+    );
+    expect(after.scene.quads.length).toBe(before.scene.quads.length);
+  });
+
+  it("faz backup antes da primeira escrita", () => {
+    saveTiles(root, 2, new Uint16Array(openMap(root, 2).tiles));
+
+    const backups = join(root, ".prism", "backups");
+    expect(existsSync(backups)).toBe(true);
+
+    const sessions = readdirSync(backups);
+    expect(sessions.length).toBeGreaterThan(0);
+    expect(readdirSync(join(backups, sessions[0]!))).toContain("Map002.rxdata");
+  });
+
+  it("recusa grade com tamanho errado", () => {
+    expect(() => saveTiles(root, 2, new Uint16Array(10))).toThrow(/10 células/);
+  });
+
+  it("recusa gravar por cima de edição feita fora do editor", () => {
+    const opened = openMap(root, 2);
+    const path = join(root, "Data", "Map002.rxdata");
+
+    // Alguém salvou o mapa no RPG Maker enquanto o editor estava aberto.
+    const bytes = readFileSync(path);
+    utimesSync(path, new Date(), new Date(Date.now() + 5000));
+
+    expect(() => saveTiles(root, 2, new Uint16Array(opened.tiles))).toThrow(
+      /mudou em disco/,
+    );
+    // E o arquivo continua como estava.
+    expect(readFileSync(path).equals(bytes)).toBe(true);
   });
 });
