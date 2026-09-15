@@ -39,6 +39,14 @@ Essentials de referência do próprio repositório, sem configuração.
 O editor abre em **2D**, que é o modo certo para desenhar: o dado de um mapa
 do RPG Maker é 2D, e o 3D existe para conferir relevo. O botão 2D/3D troca.
 
+A interface segue a forma de um editor de mapas completo (abas, árvore de
+mapas, painel de tiles, barra de status), mas a maior parte ainda não faz
+nada. Controle sem função aparece com **ponto âmbar** e avisa
+"Em desenvolvimento" ao ser clicado, via o componente `Soon`. A regra é
+mostrar o que falta, não esconder: esconder daria uma impressão de completude
+que o projeto não tem. Ao implementar algo, troque o `Soon` pelo controle real
+e tire o ponto.
+
 Elevação: clique sobe, shift mais clique desce, teclas 1 2 3 trocam o pincel,
 L nivela o bloco, ctrl+Z desfaz, ctrl+S grava o `.scene.json`.
 

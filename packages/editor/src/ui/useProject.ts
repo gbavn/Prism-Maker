@@ -29,6 +29,14 @@ export function useProject() {
 
   const history = useRef<History<number[]> | null>(null);
   const saved = useRef<number[]>([]);
+  /**
+   * Contador que força o React a redesenhar depois de mexer no histórico.
+   *
+   * O histórico vive num ref, e não em estado, porque é um array de milhares
+   * de números trocado a cada pincelada. O preço disso é que desfazer e
+   * refazer não redesenhariam sozinhos, e os botões ficariam com estado velho.
+   */
+  const [revision, setRevision] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -85,6 +93,7 @@ export function useProject() {
       current !== undefined &&
       current.some((step, index) => step !== saved.current[index]);
     setState((old) => (old.dirty === isDirty ? old : { ...old, dirty: isDirty }));
+    setRevision((value) => value + 1);
   }, []);
 
   const save = useCallback(async () => {
@@ -99,5 +108,5 @@ export function useProject() {
     return result;
   }, [state.project?.root, state.map?.id]);
 
-  return { state, history, openMap, markDirty, save };
+  return { state, history, revision, openMap, markDirty, save };
 }
