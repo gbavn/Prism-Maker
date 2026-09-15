@@ -39,6 +39,11 @@ Essentials de referência do próprio repositório, sem configuração.
 O editor abre em **2D**, que é o modo certo para desenhar: o dado de um mapa
 do RPG Maker é 2D, e o 3D existe para conferir relevo. O botão 2D/3D troca.
 
+A **grade de células** vem ligada e o botão Grid desliga. Ela é plana e fica
+por cima de tudo, o que basta em 2D: a câmera olha reto para baixo, então
+elevação muda a altura e não a posição no plano. Em 3D ela some, porque grade
+plana cortando relevo não ajuda a ler nada.
+
 **A interface do editor é em inglês**, e só ela: comentários de código,
 mensagens de commit e documentação seguem em português. O público de
 Pokémon Essentials é majoritariamente anglófono.

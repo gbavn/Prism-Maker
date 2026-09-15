@@ -7,6 +7,8 @@ import {
   Mesh,
   MeshBasicMaterial,
   MOUSE,
+  LineBasicMaterial,
+  LineSegments,
   NearestFilter,
   OrthographicCamera,
   PerspectiveCamera,
@@ -69,6 +71,8 @@ export interface Viewport {
   show(scene: BuiltScene, images: ViewportImages): Promise<void>;
   pickCell(x: number, y: number): PickedCell | null;
   highlight(cell: PickedCell | null): void;
+  /** Liga a grade de celulas, que so aparece em 2D. */
+  setGrid(on: boolean): void;
   /** Marca a celula de cada evento, para os que quase nao aparecem. */
   setEventMarks(on: boolean): void;
   /** Destaca um evento pelo id, ou nenhum. */
@@ -177,6 +181,18 @@ export function createViewport(canvas: HTMLCanvasElement): Viewport {
   const marks: { mesh: Mesh; id: number }[] = [];
   let marksOn = false;
   let selected: number | null = null;
+
+  /**
+   * A grade de celulas.
+   *
+   * Plana e por cima de tudo, sem teste de profundidade. Em 2D a camera olha
+   * reto para baixo, entao uma grade plana cai exatamente em cima das bordas
+   * de celula por mais que o terreno suba: elevacao muda a altura, nao a
+   * posicao no plano. Em 3D ela some, porque grade plana cortando relevo nao
+   * ajuda a ler nada.
+   */
+  let grid: { minor: LineSegments; major: LineSegments } | null = null;
+  let gridOn = true;
   /**
    * Textura por URL, viva enquanto a viewport existir.
    *
@@ -197,9 +213,9 @@ export function createViewport(canvas: HTMLCanvasElement): Viewport {
   const marker = new Mesh(
     new PlaneGeometry(1, 1),
     new MeshBasicMaterial({
-      color: 0xffd94d,
+      color: 0xffe9a3,
       transparent: true,
-      opacity: 0.45,
+      opacity: 0.22,
       depthTest: false,
       side: DoubleSide,
     }),
@@ -373,11 +389,11 @@ export function createViewport(canvas: HTMLCanvasElement): Viewport {
       sprites.push({ mesh, billboard });
 
       const mark = new Mesh(
-        outlineGeometry(0.12),
+        outlineGeometry(0.06),
         new MeshBasicMaterial({
           color: 0x9b8cfa,
           transparent: true,
-          opacity: 0.55,
+          opacity: 0.35,
           depthTest: false,
           side: DoubleSide,
         }),
@@ -481,6 +497,7 @@ export function createViewport(canvas: HTMLCanvasElement): Viewport {
 
     lastSizes = sizes;
     drawEvents(next, sizes, loaded);
+    buildGrid(next);
 
     frame(next);
     resize();
@@ -517,14 +534,96 @@ export function createViewport(canvas: HTMLCanvasElement): Viewport {
     marker.visible = true;
   }
 
+  /**
+   * Refaz a grade para o mapa aberto.
+   *
+   * Duas malhas: a fina em cada celula, e uma mais firme a cada oito, que e o
+   * passo do tileset e o que deixa contar distancia sem ficar somando de um
+   * em um.
+   */
+  function buildGrid(target: BuiltScene): void {
+    if (grid !== null) {
+      for (const lines of [grid.minor, grid.major]) {
+        scene.remove(lines);
+        lines.geometry.dispose();
+        (lines.material as LineBasicMaterial).dispose();
+      }
+      grid = null;
+    }
+
+    const step = target.tileSize;
+    const half = step / 2;
+    const left = -half;
+    const top = -half;
+    const right = (target.width - 1) * step + half;
+    const bottom = (target.height - 1) * step + half;
+    // Acima de tudo que a cena desenha, e sem teste de profundidade: a grade e
+    // ajuda de edicao, nao parte do mundo.
+    const y = 0.5;
+
+    const minor: number[] = [];
+    const major: number[] = [];
+    const MAJOR_EVERY = 8;
+
+    for (let x = 0; x <= target.width; x += 1) {
+      const at = left + x * step;
+      const into = x % MAJOR_EVERY === 0 ? major : minor;
+      into.push(at, y, top, at, y, bottom);
+    }
+    for (let z = 0; z <= target.height; z += 1) {
+      const at = top + z * step;
+      const into = z % MAJOR_EVERY === 0 ? major : minor;
+      into.push(left, y, at, right, y, at);
+    }
+
+    const lines = (points: number[], color: number, opacity: number) => {
+      const geometry = new BufferGeometry();
+      geometry.setAttribute(
+        "position",
+        new BufferAttribute(new Float32Array(points), 3),
+      );
+      const mesh = new LineSegments(
+        geometry,
+        new LineBasicMaterial({
+          color,
+          transparent: true,
+          opacity,
+          depthTest: false,
+        }),
+      );
+      mesh.renderOrder = 9;
+      scene.add(mesh);
+      return mesh;
+    };
+
+    grid = {
+      minor: lines(minor, 0xdfe3ea, 0.15),
+      major: lines(major, 0xdfe3ea, 0.3),
+    };
+    paintGrid();
+  }
+
+  /** A grade vale so em 2D, e so quando ligada. */
+  function paintGrid(): void {
+    const on = gridOn && mode === "2d";
+    if (grid === null) return;
+    grid.minor.visible = on;
+    grid.major.visible = on;
+  }
+
+  function setGrid(on: boolean): void {
+    gridOn = on;
+    paintGrid();
+  }
+
   /** Aplica a visibilidade e o destaque das marcas de evento. */
   function paintMarks(): void {
     for (const { mesh, id } of marks) {
       mesh.visible = marksOn;
       const material = mesh.material as MeshBasicMaterial;
       const chosen = id === selected;
-      material.opacity = chosen ? 1 : 0.55;
-      material.color.set(chosen ? 0xffffff : 0x9b8cfa);
+      material.opacity = chosen ? 0.7 : 0.35;
+      material.color.set(chosen ? 0xd9d0ff : 0x9b8cfa);
     }
   }
 
@@ -551,6 +650,7 @@ export function createViewport(canvas: HTMLCanvasElement): Viewport {
     controls = new OrbitControls(camera, canvas);
 
     framedFor = "";
+    paintGrid();
     if (built !== null) {
       layoutEvents(built, lastSizes);
       frame(built);
@@ -581,12 +681,21 @@ export function createViewport(canvas: HTMLCanvasElement): Viewport {
     show,
     pickCell,
     highlight,
+    setGrid,
     setEventMarks,
     selectEvent,
     setMode,
     resize,
     dispose(): void {
       clear();
+      if (grid !== null) {
+        for (const lines of [grid.minor, grid.major]) {
+          scene.remove(lines);
+          lines.geometry.dispose();
+          (lines.material as LineBasicMaterial).dispose();
+        }
+        grid = null;
+      }
       for (const texture of textureCache.values()) texture.dispose();
       textureCache.clear();
       controls.dispose();

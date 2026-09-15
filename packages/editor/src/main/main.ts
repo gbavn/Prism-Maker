@@ -168,6 +168,15 @@ async function rehearseEvents(window: BrowserWindow): Promise<void> {
   // A celula do NPC que explica as portas, em 12,7 no mapa.
   await click(595, 357);
   await wait(400);
+
+  // Desliga e liga a grade, para o ensaio passar pelos dois sentidos do
+  // botao e ainda assim terminar com ela ligada para o print.
+  for (const _ of [0, 1]) {
+    await window.webContents.executeJavaScript(
+      "document.querySelector('[data-grid]')?.click()",
+    );
+    await wait(300);
+  }
 }
 
 async function captureAndQuit(

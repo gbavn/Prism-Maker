@@ -13,6 +13,7 @@ import type { BuiltScene } from "../scene/buildScene.js";
 export interface ViewportHandle {
   redraw: (scene: BuiltScene) => void;
   highlight: (cell: PickedCell | null) => void;
+  setGrid: (on: boolean) => void;
   setEventMarks: (on: boolean) => void;
   selectEvent: (id: number | null) => void;
   setMode: (mode: ViewMode) => void;
@@ -100,6 +101,7 @@ export function Viewport({
         void view.show(scene, { sources: imagesOf(current) });
       },
       highlight: (cell) => viewRef.current?.highlight(cell),
+      setGrid: (on) => viewRef.current?.setGrid(on),
       setEventMarks: (on) => viewRef.current?.setEventMarks(on),
       selectEvent: (id) => viewRef.current?.selectEvent(id),
       setMode: (mode) => viewRef.current?.setMode(mode),

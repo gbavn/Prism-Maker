@@ -1,3 +1,4 @@
+import { Grid3x3 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { applyBrush, levelTo } from "../scene/elevation.js";
 import {
@@ -40,6 +41,7 @@ export function App() {
   const [layer, setLayer] = useState(0);
   const [stamp, setStamp] = useState<Stamp>(singleStamp(384));
   const [view, setView] = useState<"2d" | "3d">("2d");
+  const [grid, setGrid] = useState(true);
   const [hovered, setHovered] = useState<PickedCell | null>(null);
   const [event, setEvent] = useState<number | null>(null);
   const [message, setMessage] = useState<string | null>(null);
@@ -252,9 +254,10 @@ export function App() {
    * as marcas nascem escondidas.
    */
   useEffect(() => {
+    viewport.current?.setGrid(grid);
     viewport.current?.setEventMarks(mode === "events");
     viewport.current?.selectEvent(mode === "events" ? event : null);
-  }, [mode, event, project.revision, state.map]);
+  }, [mode, event, grid, project.revision, state.map]);
 
   useEffect(() => {
     function onKey(event: KeyboardEvent): void {
@@ -351,7 +354,27 @@ export function App() {
           />
 
           <main className="relative min-w-0 flex-1 overflow-hidden rounded-lg border border-edge bg-panel">
-            <div className="absolute right-3 top-3 z-10 flex overflow-hidden rounded-md bg-shell/80 p-0.5 backdrop-blur">
+            <div className="absolute right-3 top-3 z-10 flex items-center gap-1">
+              {view === "2d" ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setGrid(!grid);
+                    viewport.current?.setGrid(!grid);
+                  }}
+                  aria-pressed={grid}
+                  title="Cell grid"
+                  data-grid={grid ? "on" : "off"}
+                  className={`flex items-center gap-1.5 rounded-md bg-shell/80 px-2.5 py-1.5 text-[10.5px] font-medium tracking-wide backdrop-blur transition-colors ${
+                    grid ? "text-brand" : "text-dim hover:text-body"
+                  }`}
+                >
+                  <Grid3x3 className="h-3.5 w-3.5" strokeWidth={1.8} />
+                  GRID
+                </button>
+              ) : null}
+
+              <div className="flex overflow-hidden rounded-md bg-shell/80 p-0.5 backdrop-blur">
               {(["2d", "3d"] as const).map((option) => (
                 <button
                   key={option}
@@ -371,6 +394,7 @@ export function App() {
                   {option.toUpperCase()}
                 </button>
               ))}
+              </div>
             </div>
 
             {state.error !== null ? (
