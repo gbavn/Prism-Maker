@@ -10,6 +10,8 @@ const api: PrismApi = {
     ipcRenderer.invoke(IPC.saveTiles, root, id, tiles),
   saveElevation: (root, id, heights) =>
     ipcRenderer.invoke(IPC.saveElevation, root, id, heights),
+  confirmSave: (mapName) => ipcRenderer.invoke(IPC.confirmSave, mapName),
+  playtest: (root) => ipcRenderer.invoke(IPC.playtest, root),
 };
 
 contextBridge.exposeInMainWorld("prism", api);

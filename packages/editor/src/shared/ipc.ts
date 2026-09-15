@@ -8,6 +8,8 @@ export const IPC = {
   buildScene: "prism:build-scene",
   saveElevation: "prism:save-elevation",
   saveTiles: "prism:save-tiles",
+  confirmSave: "prism:confirm-save",
+  playtest: "prism:playtest",
 } as const;
 
 /**
@@ -38,6 +40,19 @@ export interface PrismApi {
     id: number,
     heights: readonly number[],
   ): Promise<{ path: string; cells: number }>;
+  /** Pergunta o que fazer com alteracao pendente antes de sair do mapa. */
+  confirmSave(mapName: string): Promise<SaveAnswer>;
+  /** Abre o jogo do projeto. */
+  playtest(root: string): Promise<PlaytestResult>;
+}
+
+/** Resposta do dialogo de alteracao pendente. */
+export type SaveAnswer = "save" | "discard" | "cancel";
+
+export interface PlaytestResult {
+  started: boolean;
+  /** Caminho do executavel, ou o motivo de nao ter aberto. */
+  detail: string;
 }
 
 declare global {

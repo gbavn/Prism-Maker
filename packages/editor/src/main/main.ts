@@ -1,3 +1,4 @@
+import { spawn } from "node:child_process";
 import { existsSync, writeFileSync } from "node:fs";
 import { dirname, join, relative, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -23,7 +24,15 @@ const editorRoot = resolve(here, "..", "..");
  * faz o marco visual valer: a pessoa roda e ve.
  */
 function defaultProjectRoot(): string | null {
-  const candidate = resolve(editorRoot, "..", "..", "Game", "essentials-v21.1");
+  // PRISM_PROJECT aponta para outro projeto. O smoke test usa isso para
+  // gravar numa copia: um ensaio que responde "Save" escreveria no Essentials
+  // versionado do repositorio, e teste que suja o repositorio e teste que a
+  // gente aprende a nao rodar.
+  const chosen = process.env["PRISM_PROJECT"];
+  const candidate =
+    chosen !== undefined && chosen !== ""
+      ? resolve(chosen)
+      : resolve(editorRoot, "..", "..", "Game", "essentials-v21.1");
   return existsSync(join(candidate, "Data", "MapInfos.rxdata")) ? candidate : null;
 }
 
@@ -66,6 +75,73 @@ ipcMain.handle(
   (_event, root: string, id: number, heights: number[]) =>
     saveElevation(root, id, heights),
 );
+
+/**
+ * Pergunta o que fazer com alteracao pendente.
+ *
+ * Dialogo do sistema, e nao uma janela desenhada por nos: perder trabalho e
+ * irreversivel, e vale usar a caixa que a pessoa ja reconhece como aviso
+ * serio. Fecha em "Cancel" por tecla Escape, que e o lado seguro.
+ */
+ipcMain.handle(IPC.confirmSave, async (event, mapName: string) => {
+  // Caixa do sistema nao da para clicar em teste sem tela. Com
+  // PRISM_SMOKE_ANSWER o ensaio responde por ela, e assim o caminho perigoso,
+  // o de trocar de mapa com edicao pendente, fica coberto por print.
+  const canned = process.env["PRISM_SMOKE_ANSWER"];
+  if (canned !== undefined) return canned;
+
+  const window = BrowserWindow.fromWebContents(event.sender);
+  const options = {
+    type: "question" as const,
+    buttons: ["Save", "Discard", "Cancel"],
+    defaultId: 0,
+    cancelId: 2,
+    title: "Unsaved changes",
+    message: `Save the changes to ${mapName}?`,
+    detail: "Your edits have not been written to the project yet.",
+    noLink: true,
+  };
+
+  const { response } =
+    window === null
+      ? await dialog.showMessageBox(options)
+      : await dialog.showMessageBox(window, options);
+
+  return response === 0 ? "save" : response === 1 ? "discard" : "cancel";
+});
+
+/**
+ * Abre o jogo do projeto.
+ *
+ * Sem argumento de linha de comando: o mesmo que dar dois cliques no
+ * executavel. O kit do Essentials v21.1 vem com mkxp-z como `Game.exe`, e
+ * inventar uma bandeira de depuracao que eu nao tenho como verificar aqui
+ * daria erro na maquina de quem usa e em nenhuma outra.
+ *
+ * O processo e solto do editor: fechar o Prism nao pode matar o jogo aberto.
+ */
+ipcMain.handle(IPC.playtest, (_event, root: string) => {
+  const executable = join(root, "Game.exe");
+
+  if (!existsSync(executable)) {
+    return { started: false, detail: `Game.exe not found in ${root}` };
+  }
+  if (process.platform !== "win32") {
+    return {
+      started: false,
+      detail: "Game.exe only runs on Windows: this kit ships the Windows build",
+    };
+  }
+
+  const game = spawn(executable, [], {
+    cwd: root,
+    detached: true,
+    stdio: "ignore",
+  });
+  game.unref();
+
+  return { started: true, detail: executable };
+});
 
 /**
  * Smoke test com imagem.
@@ -210,6 +286,17 @@ async function captureAndQuit(
       await new Promise((done) => setTimeout(done, 1500));
       if (process.env["PRISM_SMOKE_EDIT"] === "1") {
         await rehearseEditing(window);
+      }
+      if (process.env["PRISM_SMOKE_SWITCH"] === "1") {
+        // Clica em outro mapa na lista, que e o que dispara a pergunta.
+        window.webContents.sendInputEvent({ type: "mouseMove", x: 170, y: 257 });
+        window.webContents.sendInputEvent({
+          type: "mouseDown", x: 170, y: 257, button: "left", clickCount: 1,
+        });
+        window.webContents.sendInputEvent({
+          type: "mouseUp", x: 170, y: 257, button: "left", clickCount: 1,
+        });
+        await new Promise((done) => setTimeout(done, 2000));
       }
       const layer = process.env["PRISM_SMOKE_LAYER"];
       if (layer !== undefined) {

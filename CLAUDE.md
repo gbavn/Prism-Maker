@@ -104,6 +104,23 @@ Comum aos dois: teclas 1 2 3 trocam o pincel, ctrl+Z desfaz, ctrl+S grava. O
 desfazer é um só para os dois modos, porque quem aperta ctrl+Z espera voltar a
 última coisa que fez, não a última coisa que fez naquela ferramenta.
 
+Alteração pendente nunca é jogada fora em silêncio. Trocar de mapa ou abrir o
+Playtest com edição não gravada pergunta antes, numa caixa do sistema com
+Save, Discard e Cancel. **Playtest** grava o que você mandar gravar e abre o
+`Game.exe` do projeto, sem argumento de linha de comando, que é o mesmo que
+dar dois cliques no executável. O kit do v21.1 vem com mkxp-z, e só o
+executável do Windows: em outro sistema o botão diz isso em vez de falhar
+calado.
+
+`PRISM_PROJECT` aponta o editor para outro projeto, em vez do Essentials do
+repositório.
+
+Para checar que o arquivo gravado continua abrindo no motor, sem depender de
+abrir o jogo, existe `node tools/verify-write.mjs`: ele pinta, grava, e manda
+o Ruby de verdade abrir o resultado com `Marshal`, que é o mesmo caminho do
+RGSS e do mkxp-z. Precisa de Ruby instalado e roda fora do CI, como o
+`dump-expected.rb`.
+
 Para provar que o editor renderiza sem ter tela, existe um smoke test com
 imagem: `PRISM_SMOKE_SHOT=/caminho/saida.png` faz o app subir, esperar a
 primeira cena e salvar um PNG antes de sair. Em máquina sem monitor, rodar
@@ -112,7 +129,11 @@ mouse e teclado e desenha antes do print, o que exercita seleção, as
 ferramentas, a escolha de bloco na paleta e a reconstrução da cena. Com
 `PRISM_SMOKE_EVENTS=1`, entra no modo Events e seleciona um evento pela
 célula. Com `PRISM_SMOKE_LAYER=<n>`, troca a camada em foco. Com
-`PRISM_SMOKE_3D=1`, troca para 3D antes do print.
+`PRISM_SMOKE_3D=1`, troca para 3D antes do print. Com `PRISM_SMOKE_SWITCH=1`
+troca de mapa, e `PRISM_SMOKE_ANSWER=save|discard|cancel` responde pela caixa
+de alteração pendente, que sem tela ninguém consegue clicar. **Ao rodar com
+`save`, use `PRISM_PROJECT` apontando para uma cópia**: senão o ensaio grava
+no Essentials versionado do repositório.
 
 Armadilhas já pagas na viewport, todas descobertas rodando o app:
 

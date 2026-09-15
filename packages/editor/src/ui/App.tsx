@@ -244,18 +244,71 @@ export function App() {
     viewport.current?.setActiveLayer(mode === "draw" ? layer : null);
   }, [mode, layer, project.revision, state.map]);
 
-  const doSave = useCallback(() => {
-    void project
-      .save()
-      .then((written) => {
-        if (written !== null && written.length > 0) {
-          setMessage(`saved ${written.join(" and ")}`);
-        }
-      })
-      .catch((error: unknown) => {
-        setMessage(error instanceof Error ? error.message : String(error));
-      });
+  /**
+   * Grava e devolve o que foi escrito, ou null quando nao havia o que gravar.
+   *
+   * Existe separado do botao porque o dialogo de alteracao pendente precisa
+   * esperar a gravacao terminar antes de deixar sair do mapa.
+   */
+  const saveNow = useCallback(async () => {
+    const written = await project.save();
+    if (written !== null && written.length > 0) {
+      setMessage(`saved ${written.join(" and ")}`);
+    }
+    return written;
   }, [project]);
+
+  /**
+   * Pergunta o que fazer com o que ainda nao foi gravado.
+   *
+   * Devolve true quando pode seguir. Trocar de mapa ou abrir o jogo joga fora
+   * o rascunho, e jogar trabalho fora sem perguntar e o tipo de coisa que faz
+   * a pessoa parar de confiar na ferramenta.
+   */
+  const guardChanges = useCallback(async () => {
+    if (!project.dirty) return true;
+
+    const answer = await window.prism.confirmSave(state.map?.name ?? "this map");
+    if (answer === "cancel") return false;
+    if (answer === "save") {
+      try {
+        await saveNow();
+      } catch (error) {
+        setMessage(error instanceof Error ? error.message : String(error));
+        return false;
+      }
+    }
+    return true;
+  }, [project.dirty, state.map?.name, saveNow]);
+
+  /** Abre outro mapa, perguntando antes se houver alteracao pendente. */
+  const openMap = useCallback(
+    (id: number) => {
+      void (async () => {
+        if (!(await guardChanges())) return;
+        setEvent(null);
+        await project.openMap(id);
+      })();
+    },
+    [guardChanges, project],
+  );
+
+  const doPlaytest = useCallback(() => {
+    const root = state.project?.root;
+    if (root === undefined) return;
+
+    void (async () => {
+      if (!(await guardChanges())) return;
+      const result = await window.prism.playtest(root);
+      setMessage(result.started ? "playtest started" : result.detail);
+    })();
+  }, [state.project?.root, guardChanges]);
+
+  const doSave = useCallback(() => {
+    void saveNow().catch((error: unknown) => {
+      setMessage(error instanceof Error ? error.message : String(error));
+    });
+  }, [saveNow]);
 
   const step = useCallback(
     (direction: "undo" | "redo") => {
@@ -366,7 +419,7 @@ export function App() {
           onSave={doSave}
           onUndo={() => step("undo")}
           onRedo={() => step("redo")}
-          onSoon={soon}
+          onPlaytest={doPlaytest}
         />
 
         <ToolBar
@@ -387,7 +440,7 @@ export function App() {
           <MapPanel
             project={state.project}
             currentId={state.map?.id ?? null}
-            onSelect={(id) => void project.openMap(id)}
+            onSelect={openMap}
             onSoon={soon}
           />
 

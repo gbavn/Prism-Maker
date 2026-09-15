@@ -1,5 +1,4 @@
 import { Play, Redo2, Save, Undo2 } from "lucide-react";
-import { Soon } from "./Soon.jsx";
 
 interface Props {
   projectName: string;
@@ -10,7 +9,7 @@ interface Props {
   onSave: () => void;
   onUndo: () => void;
   onRedo: () => void;
-  onSoon: (label: string) => void;
+  onPlaytest: () => void;
 }
 
 const ghost =
@@ -25,7 +24,7 @@ export function TopBar({
   onSave,
   onUndo,
   onRedo,
-  onSoon,
+  onPlaytest,
 }: Props) {
   return (
     <header className="flex items-center gap-3 py-2 pl-1 pr-1">
@@ -64,28 +63,37 @@ export function TopBar({
         >
           <Redo2 className="h-4 w-4" strokeWidth={1.8} />
         </button>
+        {/*
+          Com nome, e não só o ícone: salvar é a ação que a pessoa procura
+          quando está com medo de perder o trabalho, e ícone sozinho se
+          esconde no meio dos outros.
+        */}
         <button
           type="button"
           onClick={onSave}
           disabled={!dirty}
-          title="Save elevation (ctrl+S)"
-          className={`${ghost} ${
-            dirty ? "bg-brand/15 text-brand hover:bg-brand/25" : "text-dim"
+          title="Save (ctrl+S)"
+          className={`flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[11px] transition-colors disabled:opacity-40 ${
+            dirty
+              ? "bg-brand/20 text-brand hover:bg-brand/30"
+              : "text-dim hover:bg-raised"
           }`}
         >
-          <Save className="h-4 w-4" strokeWidth={1.8} />
+          <Save className="h-3.5 w-3.5" strokeWidth={1.8} />
+          Save
         </button>
 
         <span className="mx-1 h-5 w-px bg-edge" />
 
-        <Soon
-          label="Playtest"
-          onSoon={onSoon}
-          className="flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md border border-brand/40 py-1 pl-3 pr-4 text-[11px] text-brand/90"
+        <button
+          type="button"
+          onClick={onPlaytest}
+          title="Open the game"
+          className="flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md border border-brand/40 px-3 py-1 text-[11px] text-brand/90 transition-colors hover:bg-brand/15"
         >
           <Play className="h-3.5 w-3.5" strokeWidth={2} />
           Playtest
-        </Soon>
+        </button>
       </div>
     </header>
   );
