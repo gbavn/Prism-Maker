@@ -39,13 +39,25 @@ Essentials de referência do próprio repositório, sem configuração.
 O editor abre em **2D**, que é o modo certo para desenhar: o dado de um mapa
 do RPG Maker é 2D, e o 3D existe para conferir relevo. O botão 2D/3D troca.
 
-A interface segue a forma de um editor de mapas completo (abas, árvore de
-mapas, painel de tiles, barra de status), mas a maior parte ainda não faz
-nada. Controle sem função aparece com **ponto âmbar** e avisa
-"Em desenvolvimento" ao ser clicado, via o componente `Soon`. A regra é
-mostrar o que falta, não esconder: esconder daria uma impressão de completude
-que o projeto não tem. Ao implementar algo, troque o `Soon` pelo controle real
-e tire o ponto.
+**A interface do editor é em inglês**, e só ela: comentários de código,
+mensagens de commit e documentação seguem em português. O público de
+Pokémon Essentials é majoritariamente anglófono.
+
+A interface segue a forma de um editor de mapas completo (trilha de modos,
+painel de mapas, viewport, paleta de tiles, barra de status), mas a maior
+parte ainda não faz nada. Controle sem função aparece com **ponto âmbar** e
+avisa "Coming soon" ao ser clicado, via o componente `Soon`. A regra é mostrar
+o que falta, não esconder: esconder daria uma impressão de completude que o
+projeto não tem. Ao implementar algo, troque o `Soon` pelo controle real.
+
+Ícones vêm de `lucide-react`, importados um a um para o bundler descartar o
+resto. Não desenhe SVG à mão.
+
+A identidade visual é deliberadamente própria: trilha vertical de modos em vez
+de abas horizontais, painéis flutuantes arredondados em vez de painéis colados
+por divisórias, e acento violeta. Layout de editor de mapa é convenção do
+gênero e não há problema em segui-la, mas a aparência não deve lembrar nenhuma
+ferramenta específica.
 
 Elevação: clique sobe, shift mais clique desce, teclas 1 2 3 trocam o pincel,
 L nivela o bloco, ctrl+Z desfaz, ctrl+S grava o `.scene.json`.

@@ -1,21 +1,20 @@
 import type { ReactNode } from "react";
 
 /**
- * Controle que existe na interface mas ainda nao faz nada.
+ * A control that exists in the interface but does nothing yet.
  *
- * Preferi deixar o botao visivel a esconder o que falta: assim a forma da
- * ferramenta fica clara, e o ponto amarelo mais o aviso ao clicar deixam
- * honesto o que ja funciona e o que nao. Esconder daria uma impressao de
- * completude que o projeto ainda nao tem.
+ * Showing it beats hiding it: the shape of the tool stays legible, and the
+ * amber dot plus the message on click keep it honest about what already
+ * works. Hiding would suggest a completeness the project does not have.
  */
-export const SOON_LABEL = "Em desenvolvimento";
+export const SOON_LABEL = "Coming soon";
 
 interface Props {
   children: ReactNode;
   label: string;
   onSoon: (label: string) => void;
   className?: string;
-  /** Marca o ponto amarelo. Desligado em listas longas, onde poluiria. */
+  /** The amber dot. Off in long lists, where it would be noise. */
   dot?: boolean;
 }
 
@@ -25,11 +24,11 @@ export function Soon({ children, label, onSoon, className = "", dot = true }: Pr
       type="button"
       title={`${label} · ${SOON_LABEL}`}
       onClick={() => onSoon(label)}
-      className={`relative cursor-default text-muted/70 hover:text-muted ${className}`}
+      className={`relative cursor-default text-dim/70 transition-colors hover:text-dim ${className}`}
     >
       {children}
       {dot ? (
-        <span className="absolute -right-0.5 -top-0.5 h-1.5 w-1.5 rounded-full bg-amber-400/80" />
+        <span className="absolute right-1 top-1 h-1.5 w-1.5 rounded-full bg-amber-400/90" />
       ) : null}
     </button>
   );

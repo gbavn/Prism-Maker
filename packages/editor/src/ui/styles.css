@@ -1,14 +1,22 @@
 @import "tailwindcss";
 
+/**
+ * Paleta própria.
+ *
+ * Violeta como acento, e não azul: o mapa é verde e pastel, então um acento
+ * frio e saturado se separa da arte sem competir com ela. O fundo é quase
+ * preto para que os painéis flutuem como cartões, que é o oposto de painéis
+ * colados separados por uma linha.
+ */
 @theme {
-  --color-ink-900: #0f1318;
-  --color-ink-800: #14181d;
-  --color-ink-700: #1c2128;
-  --color-ink-600: #242b34;
-  --color-line: #2b323c;
-  --color-body: #d8dee6;
-  --color-muted: #8a94a3;
-  --color-accent: #6fa8dc;
+  --color-shell: #0a0b0f;
+  --color-panel: #14161d;
+  --color-raised: #1b1e27;
+  --color-edge: #262a35;
+  --color-body: #dfe3ea;
+  --color-dim: #8b93a3;
+  --color-brand: #9b8cfa;
+  --color-brand-dim: #6c5cd6;
 }
 
 html,

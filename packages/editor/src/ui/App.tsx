@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { applyBrush, levelTo } from "../scene/elevation.js";
-import { MapTree } from "./chrome/MapTree.jsx";
+import { MapPanel } from "./chrome/MapPanel.jsx";
+import { ModeRail, type ModeId } from "./chrome/ModeRail.jsx";
 import { SOON_LABEL } from "./chrome/Soon.jsx";
 import { StatusBar } from "./chrome/StatusBar.jsx";
 import { TilePanel } from "./chrome/TilePanel.jsx";
-import { TitleBar, type TabId } from "./chrome/TitleBar.jsx";
-import { ToolStrip } from "./chrome/ToolStrip.jsx";
+import { ToolBar } from "./chrome/ToolBar.jsx";
+import { TopBar } from "./chrome/TopBar.jsx";
 import { useProject } from "./useProject.js";
 import { Viewport, type ViewportHandle } from "./Viewport.jsx";
 import type { PickedCell } from "./viewport/scene3d.js";
@@ -14,9 +15,9 @@ export function App() {
   const { state, history, revision, openMap, markDirty, save } = useProject();
   const viewport = useRef<ViewportHandle>(null);
 
-  const [tab, setTab] = useState<TabId>("geometria");
+  const [mode, setMode] = useState<ModeId>("terrain");
   const [brush, setBrush] = useState(1);
-  const [mode, setMode] = useState<"2d" | "3d">("2d");
+  const [view, setView] = useState<"2d" | "3d">("2d");
   const [hovered, setHovered] = useState<PickedCell | null>(null);
   const [message, setMessage] = useState<string | null>(null);
 
@@ -66,7 +67,7 @@ export function App() {
         size: brush,
         delta: lower ? -1 : 1,
       });
-      if (changed === 0) return announce("já está no limite de altura");
+      if (changed === 0) return announce("already at the height limit");
 
       current.push(heights);
       markDirty();
@@ -78,7 +79,7 @@ export function App() {
 
   const doSave = useCallback(() => {
     void save().then((result) => {
-      if (result) announce(`salvo em ${result.path.split("/").pop()}`);
+      if (result) announce(`saved to ${result.path.split("/").pop()}`);
     });
   }, [save, announce]);
 
@@ -118,7 +119,7 @@ export function App() {
           current.push(heights);
           markDirty();
           void redraw();
-          announce(`nivelado em ${target}`);
+          announce(`levelled to ${target}`);
         }
         return;
       }
@@ -145,84 +146,83 @@ export function App() {
       ? history.current.current[hovered.y * state.map.grid.width + hovered.x]
       : undefined;
 
+  const projectName =
+    state.project?.root.split("/").filter(Boolean).pop() ?? "no project";
+
   return (
-    <div className="flex h-full flex-col bg-ink-800 font-sans text-body">
-      <TitleBar
-        tab={tab}
-        onTab={setTab}
-        dirty={state.dirty}
-        canUndo={history.current?.canUndo ?? false}
-        canRedo={history.current?.canRedo ?? false}
-        onSave={doSave}
-        onUndo={() => step("undo")}
-        onRedo={() => step("redo")}
-        onSoon={soon}
-      />
+    <div className="flex h-full bg-shell font-sans text-body">
+      <ModeRail mode={mode} onMode={setMode} onSoon={soon} />
 
-      <ToolStrip brush={brush} onBrush={setBrush} step={0.5} onSoon={soon} />
-
-      <div className="flex min-h-0 flex-1">
-        <MapTree
-          project={state.project}
-          currentId={state.map?.id ?? null}
-          onSelect={(id) => void openMap(id)}
+      <div className="flex min-w-0 flex-1 flex-col gap-2 pb-2 pr-2 pt-0">
+        <TopBar
+          projectName={projectName}
+          mapName={state.map?.name ?? null}
+          dirty={state.dirty}
+          canUndo={history.current?.canUndo ?? false}
+          canRedo={history.current?.canRedo ?? false}
+          onSave={doSave}
+          onUndo={() => step("undo")}
+          onRedo={() => step("redo")}
           onSoon={soon}
         />
 
-        <main className="relative min-w-0 flex-1">
-          {state.map !== null ? (
-            <div className="pointer-events-none absolute left-3 top-3 z-10 rounded border border-line bg-ink-800/85 px-2.5 py-1 font-mono text-[11px] text-body backdrop-blur">
-              {String(state.map.id).padStart(3, "0")} · {state.map.name} ·{" "}
-              {state.map.grid.width} × {state.map.grid.height}
-            </div>
-          ) : null}
+        <ToolBar brush={brush} onBrush={setBrush} step={0.5} onSoon={soon} />
 
-          <div className="absolute right-3 top-3 z-10 flex overflow-hidden rounded border border-line">
-            {(["2d", "3d"] as const).map((option) => (
-              <button
-                key={option}
-                type="button"
-                onClick={() => {
-                  setMode(option);
-                  viewport.current?.setMode(option);
-                }}
-                aria-pressed={option === mode}
-                className={`px-3 py-1 text-[11px] font-medium ${
-                  option === mode
-                    ? "bg-accent text-ink-900"
-                    : "bg-ink-800/85 text-muted hover:text-body"
-                }`}
-              >
-                {option.toUpperCase()}
-              </button>
-            ))}
-          </div>
-
-          {state.error !== null ? (
-            <div className="absolute inset-x-0 top-14 z-10 mx-auto w-fit rounded border border-red-500/40 bg-red-950/70 px-3 py-1.5 text-[11px] text-red-300">
-              erro: {state.error}
-            </div>
-          ) : null}
-
-          <Viewport
-            ref={viewport}
-            map={state.map}
-            onHover={setHovered}
-            onPaint={paint}
+        <div className="flex min-h-0 flex-1 gap-2">
+          <MapPanel
+            project={state.project}
+            currentId={state.map?.id ?? null}
+            onSelect={(id) => void openMap(id)}
+            onSoon={soon}
           />
-        </main>
 
-        <TilePanel map={state.map} onSoon={soon} />
+          <main className="relative min-w-0 flex-1 overflow-hidden rounded-lg border border-edge bg-panel">
+            <div className="absolute right-3 top-3 z-10 flex overflow-hidden rounded-md bg-shell/80 p-0.5 backdrop-blur">
+              {(["2d", "3d"] as const).map((option) => (
+                <button
+                  key={option}
+                  type="button"
+                  onClick={() => {
+                    setView(option);
+                    viewport.current?.setMode(option);
+                  }}
+                  aria-pressed={option === view}
+                  className={`rounded px-2.5 py-1 text-[10.5px] font-medium tracking-wide transition-colors ${
+                    option === view
+                      ? "bg-brand/20 text-brand"
+                      : "text-dim hover:text-body"
+                  }`}
+                >
+                  {option.toUpperCase()}
+                </button>
+              ))}
+            </div>
+
+            {state.error !== null ? (
+              <div className="absolute inset-x-0 top-14 z-10 mx-auto w-fit rounded-md border border-red-500/30 bg-red-950/70 px-3 py-1.5 text-[11px] text-red-300">
+                {state.error}
+              </div>
+            ) : null}
+
+            <Viewport
+              ref={viewport}
+              map={state.map}
+              onHover={setHovered}
+              onPaint={paint}
+            />
+          </main>
+
+          <TilePanel map={state.map} onSoon={soon} />
+        </div>
+
+        <StatusBar
+          map={state.map}
+          hovered={hovered}
+          height={height}
+          message={message}
+          onSoon={soon}
+        />
       </div>
-
-      <StatusBar
-        map={state.map}
-        dirty={state.dirty}
-        hovered={hovered}
-        height={height}
-        message={message}
-        onSoon={soon}
-      />
     </div>
   );
 }

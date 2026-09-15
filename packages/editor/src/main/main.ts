@@ -134,12 +134,12 @@ async function captureAndQuit(
       }
       if (process.env["PRISM_SMOKE_3D"] === "1") {
         // Clica no botao 3D da barra de ferramentas.
-        window.webContents.sendInputEvent({ type: "mouseMove", x: 490, y: 32 });
+        window.webContents.sendInputEvent({ type: "mouseMove", x: 1007, y: 129 });
         window.webContents.sendInputEvent({
-          type: "mouseDown", x: 490, y: 32, button: "left", clickCount: 1,
+          type: "mouseDown", x: 1007, y: 129, button: "left", clickCount: 1,
         });
         window.webContents.sendInputEvent({
-          type: "mouseUp", x: 490, y: 32, button: "left", clickCount: 1,
+          type: "mouseUp", x: 1007, y: 129, button: "left", clickCount: 1,
         });
         await new Promise((done) => setTimeout(done, 1200));
       }
