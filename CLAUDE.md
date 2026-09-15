@@ -39,6 +39,14 @@ Essentials de referência do próprio repositório, sem configuração.
 O editor abre em **2D**, que é o modo certo para desenhar: o dado de um mapa
 do RPG Maker é 2D, e o 3D existe para conferir relevo. O botão 2D/3D troca.
 
+O **zoom do 2D é em escala fixa**, e 100 por cento quer dizer um tile de 32
+pixels ocupando 32 pixels de tela. O mapa rola com o botão direito ou o do
+meio, e a roda troca o degrau. Encaixar o mapa inteiro na janela, que é o
+"fit", deforma o pixel art, porque uma célula sai com 17 pixels e a vizinha
+com 18: por isso fit é uma escolha e não o padrão. A escala também é presa ao
+pixel real do dispositivo, senão monitor com escala do Windows em 125 por
+cento borra tudo de novo.
+
 A **grade de células** vem ligada e o botão Grid desliga. Ela é plana e fica
 por cima de tudo, o que basta em 2D: a câmera olha reto para baixo, então
 elevação muda a altura e não a posição no plano. Em 3D ela some, porque grade
@@ -70,6 +78,15 @@ três do XP. Ferramentas: lápis, retângulo, balde e borracha. Arrastar pinta
 contínuo e o arrasto inteiro é um passo só de desfazer. Shift apaga, seja
 qual for a ferramenta. Grava no `.rxdata`.
 
+A camada selecionada sai com a cor cheia e as outras saem apagadas, as de cima
+mais que as de baixo, porque são elas que tapam o que está sendo desenhado.
+Apagar e não esconder: sumir com as outras faria pintar por cima sem saber o
+que já existe ali.
+
+O cursor cobre exatamente a área que a ferramenta pintaria, vinda da mesma
+função que decide o que a pincelada escreve. Bloco escolhido na paleta manda
+no tamanho do pincel, e o cursor mostra isso.
+
 Editar é coisa da visão 2D. Em 3D o botão esquerdo gira a câmera: em 2D se
 edita, em 3D se olha.
 
@@ -94,10 +111,15 @@ com `xvfb-run`. Com `PRISM_SMOKE_EDIT=1` junto, o próprio Electron injeta
 mouse e teclado e desenha antes do print, o que exercita seleção, as
 ferramentas, a escolha de bloco na paleta e a reconstrução da cena. Com
 `PRISM_SMOKE_EVENTS=1`, entra no modo Events e seleciona um evento pela
-célula. Com `PRISM_SMOKE_3D=1`, troca para 3D antes do print.
+célula. Com `PRISM_SMOKE_LAYER=<n>`, troca a camada em foco. Com
+`PRISM_SMOKE_3D=1`, troca para 3D antes do print.
 
 Armadilhas já pagas na viewport, todas descobertas rodando o app:
 
+- escala quebrada deforma pixel art: com o mapa encolhido para caber, uma
+  célula sai com 17 pixels e a vizinha com 18. Daí a escala fixa em número
+  inteiro de pixels por pixel de textura, e a câmera presa à grade de pixels,
+  senão meio pixel de deslocamento traz a deformação de volta;
 - textura de tileset precisa de `colorSpace = SRGBColorSpace`, senão o Three
   a trata como linear e clareia o mapa inteiro;
 - `magFilter` e `minFilter` em `NearestFilter`, senão o pixel art borra e puxa

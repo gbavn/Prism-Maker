@@ -25,6 +25,7 @@ import {
 } from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { LAYER_GAP, type BuiltScene, type SceneBillboard } from "../../scene/buildScene.js";
+import { TILE_PIXELS } from "../../scene/tileAtlas.js";
 import {
   placeSprite,
   spriteSource,
@@ -34,6 +35,7 @@ import {
   buildTileGeometry,
   cellOfFace,
   imageKeyOf,
+  layerOf,
   SKIRT_SUFFIX,
   type AtlasGeometry,
   type ImageSize,
@@ -52,6 +54,19 @@ export interface PickedCell {
   y: number;
 }
 
+/**
+ * Area coberta pelo cursor, em celulas, relativa a celula apontada.
+ *
+ * Vem pronta de fora, calculada pela mesma funcao que decide o que a pincelada
+ * escreve. Refazer a conta aqui daria um cursor que um dia mente.
+ */
+export interface HighlightArea {
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+}
+
 export interface ViewportImages {
   /** Chave "tileset" ou "autotile:<indice>" para URL. */
   sources: Map<string, string>;
@@ -67,12 +82,30 @@ export interface ViewportImages {
  */
 export type ViewMode = "2d" | "3d";
 
+/**
+ * Escala da vista 2D.
+ *
+ * Numero e escala fixa, onde 1 quer dizer um tile de 32 pixels ocupando 32
+ * pixels de tela. "fit" encaixa o mapa inteiro na janela, que e util para
+ * olhar o conjunto e ruim para desenhar: a reducao deixa uma celula com 17
+ * pixels e a vizinha com 18, e o pixel art sai deformado.
+ */
+export type Zoom = number | "fit";
+
+/** Escalas oferecidas, todas inteiras ou metade exata. */
+export const ZOOM_STEPS = [0.5, 1, 2, 4] as const;
+
 export interface Viewport {
   show(scene: BuiltScene, images: ViewportImages): Promise<void>;
   pickCell(x: number, y: number): PickedCell | null;
-  highlight(cell: PickedCell | null): void;
+  /** Marca a celula sob o cursor, cobrindo a area que a ferramenta vai pintar. */
+  highlight(cell: PickedCell | null, area?: HighlightArea): void;
+  /** Escala do 2D: 1 e um tile por 32 pixels de tela, "fit" cabe o mapa todo. */
+  setZoom(zoom: Zoom): void;
   /** Liga a grade de celulas, que so aparece em 2D. */
   setGrid(on: boolean): void;
+  /** Camada em foco no modo Draw. As outras saem apagadas. */
+  setActiveLayer(layer: number | null): void;
   /** Marca a celula de cada evento, para os que quase nao aparecem. */
   setEventMarks(on: boolean): void;
   /** Destaca um evento pelo id, ou nenhum. */
@@ -115,9 +148,10 @@ function loadTexture(url: string): Promise<Texture> {
  * cai em cima de um sprite que pode ser opaco e do tamanho da celula, como e o
  * caso das portas. Preenchimento esconderia justamente o que a marca aponta.
  */
-function outlineGeometry(thickness: number): BufferGeometry {
+function outlineGeometry(thickness: number, thicknessY = thickness): BufferGeometry {
   const outer = 0.5;
   const inner = 0.5 - thickness;
+  const innerY = 0.5 - thicknessY;
 
   const positions: number[] = [];
   const indices: number[] = [];
@@ -129,10 +163,10 @@ function outlineGeometry(thickness: number): BufferGeometry {
     indices.push(base, base + 1, base + 2, base, base + 2, base + 3);
   };
 
-  bar(-outer, inner, outer, outer);
-  bar(-outer, -outer, outer, -inner);
-  bar(-outer, -inner, -inner, inner);
-  bar(inner, -inner, outer, inner);
+  bar(-outer, innerY, outer, outer);
+  bar(-outer, -outer, outer, -innerY);
+  bar(-outer, -innerY, -inner, innerY);
+  bar(inner, -innerY, outer, innerY);
 
   const geometry = new BufferGeometry();
   geometry.setAttribute(
@@ -150,6 +184,10 @@ export function createViewport(canvas: HTMLCanvasElement): Viewport {
     preserveDrawingBuffer: true,
   });
   renderer.setClearColor(new Color(0x0f1318), 1);
+  // Pixel de tela de verdade. Sem isto, em monitor com escala do Windows em
+  // 125 ou 150 por cento, o Electron entrega um buffer menor que a janela e o
+  // pixel art chega esticado por interpolacao do proprio sistema.
+  renderer.setPixelRatio(window.devicePixelRatio);
 
   const scene = new Scene();
   scene.add(new AmbientLight(0xffffff, 1));
@@ -225,6 +263,53 @@ export function createViewport(canvas: HTMLCanvasElement): Viewport {
   marker.visible = false;
   scene.add(marker);
 
+  /**
+   * O contorno do cursor.
+   *
+   * So o preenchimento claro nao serve de mira: com pincel de cinco vira uma
+   * mancha sem limite legivel. O contorno diz exatamente onde a pincelada
+   * comeca e acaba, e deixa o preenchimento poder continuar discreto.
+   */
+  const cursor = new Mesh(
+    outlineGeometry(0.04),
+    new MeshBasicMaterial({
+      color: 0xffe9a3,
+      transparent: true,
+      opacity: 0.8,
+      depthTest: false,
+      side: DoubleSide,
+    }),
+  );
+  cursor.rotation.x = -Math.PI / 2;
+  cursor.renderOrder = 10;
+  cursor.visible = false;
+  scene.add(cursor);
+  /** Tamanho de area que o contorno atual foi montado para servir. */
+  let cursorFor = "";
+
+  /**
+   * O anel do evento selecionado.
+   *
+   * Uma malha so, reaproveitada, e nao a marca do evento pintada de outra cor:
+   * a marca e fina de proposito para nao poluir o mapa, e o selecionado
+   * precisa de traco mais grosso para ser achado de longe. Duas coisas
+   * diferentes, dois objetos.
+   */
+  const ring = new Mesh(
+    outlineGeometry(0.16),
+    new MeshBasicMaterial({
+      color: 0xffffff,
+      transparent: true,
+      opacity: 0.95,
+      depthTest: false,
+      side: DoubleSide,
+    }),
+  );
+  ring.rotation.x = -Math.PI / 2;
+  ring.renderOrder = 11;
+  ring.visible = false;
+  scene.add(ring);
+
   /** Remove as malhas e os sprites. As texturas ficam no cache, vivas. */
   function clear(): void {
     const all = [
@@ -263,6 +348,23 @@ export function createViewport(canvas: HTMLCanvasElement): Viewport {
    * lugar no meio da edicao.
    */
   let orthoSpan = 10;
+  let zoom: Zoom = 1;
+  /** Camada em foco, ou null quando nenhuma se destaca. */
+  let activeLayer: number | null = null;
+
+  /**
+   * Quantas unidades de mundo cabem num pixel do buffer, na escala atual.
+   *
+   * A conta e arredondada para um numero inteiro de pixels por pixel de
+   * textura. Com escala do Windows em 125 por cento, 32 pixels de tile dariam
+   * 40 pixels de tela e cada pixel de textura ocuparia 1,25, que e justamente
+   * o que faz uma coluna sair com um pixel a mais que a vizinha.
+   */
+  function worldPerPixel(target: BuiltScene): number {
+    const ratio = renderer.getPixelRatio();
+    const scale = Math.max(1, Math.round((zoom === "fit" ? 1 : zoom) * ratio));
+    return target.tileSize / (TILE_PIXELS * scale);
+  }
 
   function resize(): void {
     const width = canvas.clientWidth || 1;
@@ -273,10 +375,22 @@ export function createViewport(canvas: HTMLCanvasElement): Viewport {
     if (camera instanceof PerspectiveCamera) {
       camera.aspect = aspect;
     } else if (camera instanceof OrthographicCamera) {
-      camera.left = -orthoSpan * aspect;
-      camera.right = orthoSpan * aspect;
-      camera.top = orthoSpan;
-      camera.bottom = -orthoSpan;
+      if (zoom !== "fit" && built !== null) {
+        // Escala fixa: a janela mostra o pedaco do mapa que couber, e o resto
+        // se alcanca arrastando. E o que o RPG Maker faz, e o contrario de
+        // encolher o mapa para caber.
+        const unit = worldPerPixel(built);
+        const ratio = renderer.getPixelRatio();
+        camera.left = (-width * ratio * unit) / 2;
+        camera.right = (width * ratio * unit) / 2;
+        camera.top = (height * ratio * unit) / 2;
+        camera.bottom = (-height * ratio * unit) / 2;
+      } else {
+        camera.left = -orthoSpan * aspect;
+        camera.right = orthoSpan * aspect;
+        camera.top = orthoSpan;
+        camera.bottom = -orthoSpan;
+      }
     }
     (camera as PerspectiveCamera | OrthographicCamera).updateProjectionMatrix();
   }
@@ -293,16 +407,20 @@ export function createViewport(canvas: HTMLCanvasElement): Viewport {
       camera.position.set(center.x, span, center.z);
       controls.enableRotate = false;
       // O botao esquerdo fica livre para as ferramentas. Em 2D se edita, em 3D
-      // se olha: e por isso que aqui a camera anda pelo direito e pelo meio.
+      // se olha: e por isso que aqui a camera so anda, pelo direito e pelo
+      // meio. A roda tambem nao aproxima sozinha, porque em escala fixa o
+      // zoom anda de degrau em degrau e quem controla isso e a interface.
       controls.mouseButtons = {
         LEFT: null,
-        MIDDLE: MOUSE.DOLLY,
+        MIDDLE: MOUSE.PAN,
         RIGHT: MOUSE.PAN,
       };
+      controls.enableZoom = false;
     } else {
       // Angulo proximo do usado nos jogos de DS: de cima, inclinado.
       camera.position.set(center.x, span * 1.05, center.z + span * 0.78);
       controls.enableRotate = true;
+      controls.enableZoom = true;
       controls.mouseButtons = {
         LEFT: MOUSE.ROTATE,
         MIDDLE: MOUSE.DOLLY,
@@ -313,8 +431,37 @@ export function createViewport(canvas: HTMLCanvasElement): Viewport {
     resize();
   }
 
+  function setZoom(next: Zoom): void {
+    if (next === zoom) return;
+    zoom = next;
+
+    if (built !== null && mode === "2d") {
+      framedFor = "";
+      frame(built);
+    }
+    resize();
+  }
+
+  /**
+   * Prende a camera na grade de pixels.
+   *
+   * Em escala fixa, meio pixel de deslocamento faz uma coluna de tiles sair
+   * com um pixel a mais que a vizinha, que e exatamente a deformacao que a
+   * escala inteira existe para evitar. Arrastar move de pixel em pixel.
+   */
+  function snapCamera(): void {
+    if (mode !== "2d" || zoom === "fit" || built === null) return;
+    const unit = worldPerPixel(built);
+    const snap = (value: number) => Math.round(value / unit) * unit;
+
+    camera.position.x = snap(camera.position.x);
+    camera.position.z = snap(camera.position.z);
+    controls.target.x = snap(controls.target.x);
+    controls.target.z = snap(controls.target.z);
+  }
+
   function frame(target: BuiltScene): void {
-    const key = `${mode}:${target.width}x${target.height}`;
+    const key = `${mode}:${String(zoom)}:${target.width}x${target.height}`;
     if (framedFor === key) return;
     framedFor = key;
     place(target);
@@ -389,11 +536,11 @@ export function createViewport(canvas: HTMLCanvasElement): Viewport {
       sprites.push({ mesh, billboard });
 
       const mark = new Mesh(
-        outlineGeometry(0.06),
+        outlineGeometry(0.09),
         new MeshBasicMaterial({
           color: 0x9b8cfa,
           transparent: true,
-          opacity: 0.35,
+          opacity: 0.5,
           depthTest: false,
           side: DoubleSide,
         }),
@@ -496,6 +643,7 @@ export function createViewport(canvas: HTMLCanvasElement): Viewport {
     }
 
     lastSizes = sizes;
+    paintLayers();
     drawEvents(next, sizes, loaded);
     buildGrid(next);
 
@@ -519,19 +667,38 @@ export function createViewport(canvas: HTMLCanvasElement): Viewport {
     return null;
   }
 
-  function highlight(cell: PickedCell | null): void {
+  function highlight(cell: PickedCell | null, area?: HighlightArea): void {
     if (cell === null || built === null) {
       marker.visible = false;
+      cursor.visible = false;
       return;
     }
+
+    const span = area ?? { left: 0, top: 0, width: 1, height: 1 };
+    const size = built.tileSize;
+
+    // O centro da area, que nao e a celula apontada quando o carimbo e um
+    // bloco: bloco cai com o canto no cursor, e o cursor precisa mostrar isso.
+    const centreX = cell.x + span.left + (span.width - 1) / 2;
+    const centreY = cell.y + span.top + (span.height - 1) / 2;
+
     const top = built.surface[cell.y * built.width + cell.x] ?? 0;
-    marker.scale.set(built.tileSize, built.tileSize, 1);
-    marker.position.set(
-      cell.x * built.tileSize,
-      top + 0.02,
-      cell.y * built.tileSize,
-    );
+    marker.scale.set(size * span.width, size * span.height, 1);
+    marker.position.set(centreX * size, top + 0.02, centreY * size);
     marker.visible = true;
+
+    // A espessura e em celula, entao uma area larga precisa de fracao menor
+    // para a borda sair com a mesma grossura nos dois eixos. Refeita so
+    // quando o tamanho muda, e nao a cada movimento do mouse.
+    const key = `${span.width}x${span.height}`;
+    if (key !== cursorFor) {
+      cursorFor = key;
+      cursor.geometry.dispose();
+      cursor.geometry = outlineGeometry(0.06 / span.width, 0.06 / span.height);
+    }
+    cursor.scale.copy(marker.scale);
+    cursor.position.copy(marker.position);
+    cursor.visible = true;
   }
 
   /**
@@ -597,8 +764,8 @@ export function createViewport(canvas: HTMLCanvasElement): Viewport {
     };
 
     grid = {
-      minor: lines(minor, 0xdfe3ea, 0.15),
-      major: lines(major, 0xdfe3ea, 0.3),
+      minor: lines(minor, 0xdfe3ea, 0.35),
+      major: lines(major, 0xdfe3ea, 0.6),
     };
     paintGrid();
   }
@@ -616,14 +783,49 @@ export function createViewport(canvas: HTMLCanvasElement): Viewport {
     paintGrid();
   }
 
-  /** Aplica a visibilidade e o destaque das marcas de evento. */
+  /**
+   * Apaga as camadas que nao estao em foco.
+   *
+   * O tile continua na tela, so mais escuro: sumir com ele esconderia o que
+   * ja existe embaixo e faria a pessoa pintar por cima sem saber. As camadas
+   * acima da atual ficam mais apagadas que as de baixo, porque sao elas que
+   * tapam o que esta sendo desenhado.
+   */
+  function paintLayers(): void {
+    for (const mesh of meshes) {
+      const layer = layerOf(mesh.name);
+      if (layer === null) continue;
+
+      const material = mesh.material as MeshBasicMaterial;
+      const shade =
+        activeLayer === null || layer === activeLayer
+          ? 1
+          : layer < activeLayer
+            ? 0.68
+            : 0.52;
+      material.color.setScalar(shade);
+    }
+  }
+
+  function setActiveLayer(layer: number | null): void {
+    activeLayer = layer;
+    paintLayers();
+  }
+
+  /** Aplica a visibilidade das marcas de evento e do anel do selecionado. */
   function paintMarks(): void {
+    ring.visible = false;
+
     for (const { mesh, id } of marks) {
       mesh.visible = marksOn;
-      const material = mesh.material as MeshBasicMaterial;
-      const chosen = id === selected;
-      material.opacity = chosen ? 0.7 : 0.35;
-      material.color.set(chosen ? 0xd9d0ff : 0x9b8cfa);
+      if (!marksOn || id !== selected || built === null) continue;
+
+      const found = built.billboards.find((entry) => entry.id === id);
+      if (found === undefined) continue;
+
+      ring.scale.set(built.tileSize, built.tileSize, 1);
+      ring.position.set(found.x, found.base + LAYER_GAP * 6, found.z);
+      ring.visible = true;
     }
   }
 
@@ -661,6 +863,7 @@ export function createViewport(canvas: HTMLCanvasElement): Viewport {
 
   renderer.setAnimationLoop(() => {
     controls.update();
+    snapCamera();
 
     // Em 3D o sprite gira so no eixo vertical para encarar a camera, sem
     // deitar junto com a inclinacao. E o que jogo 2.5D faz: o personagem
@@ -681,7 +884,9 @@ export function createViewport(canvas: HTMLCanvasElement): Viewport {
     show,
     pickCell,
     highlight,
+    setZoom,
     setGrid,
+    setActiveLayer,
     setEventMarks,
     selectEvent,
     setMode,
@@ -698,6 +903,10 @@ export function createViewport(canvas: HTMLCanvasElement): Viewport {
       }
       for (const texture of textureCache.values()) texture.dispose();
       textureCache.clear();
+      cursor.geometry.dispose();
+      (cursor.material as MeshBasicMaterial).dispose();
+      ring.geometry.dispose();
+      (ring.material as MeshBasicMaterial).dispose();
       controls.dispose();
       renderer.setAnimationLoop(null);
       renderer.dispose();

@@ -44,9 +44,33 @@ export interface AtlasGeometry {
  */
 export const SKIRT_SUFFIX = "|skirt";
 
-/** Imagem de origem de uma chave de malha, ignorando o sufixo de parede. */
+/**
+ * Sufixo de camada.
+ *
+ * Cada camada do XP vira malha propria, mesmo saindo da mesma imagem. Custa
+ * algumas malhas a mais e paga na hora de destacar a camada que esta sendo
+ * editada: sem essa separacao, apagar as outras apagaria tudo junto.
+ */
+export function layerSuffix(layer: number): string {
+  return `@${layer}`;
+}
+
+/** Imagem de origem de uma chave de malha, sem sufixo de parede nem de camada. */
 export function imageKeyOf(key: string): string {
-  return key.endsWith(SKIRT_SUFFIX) ? key.slice(0, -SKIRT_SUFFIX.length) : key;
+  const withoutSkirt = key.endsWith(SKIRT_SUFFIX)
+    ? key.slice(0, -SKIRT_SUFFIX.length)
+    : key;
+  const at = withoutSkirt.lastIndexOf("@");
+  return at === -1 ? withoutSkirt : withoutSkirt.slice(0, at);
+}
+
+/** Camada de uma chave de malha, ou null quando ela nao pertence a nenhuma. */
+export function layerOf(key: string): number | null {
+  if (key.endsWith(SKIRT_SUFFIX)) return null;
+  const at = key.lastIndexOf("@");
+  if (at === -1) return null;
+  const layer = Number(key.slice(at + 1));
+  return Number.isInteger(layer) ? layer : null;
 }
 
 interface Bucket {
@@ -170,7 +194,7 @@ export function buildTileGeometry(
     const z = quad.cellY * scene.tileSize;
 
     pushTile(
-      bucketFor(buckets, key),
+      bucketFor(buckets, key + layerSuffix(quad.layer)),
       source,
       size,
       { x0: x - half, z0: z - half, x1: x + half, z1: z + half, y: quad.y },

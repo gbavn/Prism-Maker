@@ -4,16 +4,20 @@ import { assetUrl } from "../shared/ipc.js";
 import { characterKey } from "../scene/charset.js";
 import {
   createViewport,
+  type HighlightArea,
   type PickedCell,
   type ViewMode,
   type Viewport as View,
+  type Zoom,
 } from "./viewport/scene3d.js";
 import type { BuiltScene } from "../scene/buildScene.js";
 
 export interface ViewportHandle {
   redraw: (scene: BuiltScene) => void;
   highlight: (cell: PickedCell | null) => void;
+  setZoom: (zoom: Zoom) => void;
   setGrid: (on: boolean) => void;
+  setActiveLayer: (layer: number | null) => void;
   setEventMarks: (on: boolean) => void;
   selectEvent: (id: number | null) => void;
   setMode: (mode: ViewMode) => void;
@@ -24,6 +28,10 @@ interface Props {
   ref: React.Ref<ViewportHandle>;
   /** Editing only happens in 2D: in 3D the left button orbits the camera. */
   editable: boolean;
+  /** The area the current tool would paint, drawn under the cursor. */
+  area: HighlightArea;
+  /** The wheel steps the zoom instead of dollying the camera. */
+  onZoomStep: (direction: 1 | -1) => void;
   onHover: (cell: PickedCell | null) => void;
   onStrokeStart: (cell: PickedCell, erase: boolean) => void;
   onStrokeMove: (cell: PickedCell) => void;
@@ -54,6 +62,8 @@ export function Viewport({
   map,
   ref,
   editable,
+  area,
+  onZoomStep,
   onHover,
   onStrokeStart,
   onStrokeMove,
@@ -101,7 +111,9 @@ export function Viewport({
         void view.show(scene, { sources: imagesOf(current) });
       },
       highlight: (cell) => viewRef.current?.highlight(cell),
+      setZoom: (zoom) => viewRef.current?.setZoom(zoom),
       setGrid: (on) => viewRef.current?.setGrid(on),
+      setActiveLayer: (layer) => viewRef.current?.setActiveLayer(layer),
       setEventMarks: (on) => viewRef.current?.setEventMarks(on),
       selectEvent: (id) => viewRef.current?.selectEvent(id),
       setMode: (mode) => viewRef.current?.setMode(mode),
@@ -121,7 +133,7 @@ export function Viewport({
   const handleMove = useCallback(
     (event: React.PointerEvent<HTMLCanvasElement>) => {
       const cell = pick(event);
-      viewRef.current?.highlight(cell);
+      viewRef.current?.highlight(cell, area);
       onHover(cell);
 
       if (!stroking.current || cell === null) return;
@@ -131,7 +143,7 @@ export function Viewport({
       lastCell.current = key;
       onStrokeMove(cell);
     },
-    [pick, onHover, onStrokeMove],
+    [pick, area, onHover, onStrokeMove],
   );
 
   const handleDown = useCallback(
@@ -170,6 +182,7 @@ export function Viewport({
       onPointerDown={handleDown}
       onPointerUp={handleUp}
       onPointerCancel={handleUp}
+      onWheel={(wheel) => onZoomStep(wheel.deltaY < 0 ? 1 : -1)}
     />
   );
 }

@@ -137,9 +137,17 @@ async function rehearseEditing(window: BrowserWindow): Promise<void> {
   // Bloco de tiles na paleta, escolhido arrastando sobre o tileset.
   await drag([1085, 505], [1145, 560]);
 
-  // Deixa o cursor parado sobre uma celula para o destaque aparecer.
+  // Volta para um tile so: com bloco escolhido, o bloco manda no pincel, e o
+  // que se quer medir aqui e o pincel.
+  await click(1150, 175);
+
+  // Pincel de cinco e cursor parado: o destaque tem que cobrir as vinte e
+  // cinco celulas que a pincelada escreveria, nao so a celula apontada.
+  send({ type: "keyDown", keyCode: "3" });
+  send({ type: "keyUp", keyCode: "3" });
+  await wait(200);
   send({ type: "mouseMove", x: 700, y: 430 });
-  await wait(400);
+  await wait(500);
 }
 
 /**
@@ -165,8 +173,16 @@ async function rehearseEvents(window: BrowserWindow): Promise<void> {
   // Modo Events na trilha lateral.
   await click(27, 174);
 
-  // A celula do NPC que explica as portas, em 12,7 no mapa.
-  await click(595, 357);
+  // A celula do NPC que explica as portas, em 12,7 no mapa. Em escala fixa a
+  // conta e direta: o centro da viewport mostra o centro do mapa, e cada
+  // celula vale 32 pixels.
+  const centre = { x: 672, y: 412 };
+  const cell = { x: 12, y: 7 };
+  const map = { width: 32, height: 21 };
+  await click(
+    Math.round(centre.x + (cell.x - (map.width - 1) / 2) * 32),
+    Math.round(centre.y + (cell.y - (map.height - 1) / 2) * 32),
+  );
   await wait(400);
 
   // Desliga e liga a grade, para o ensaio passar pelos dois sentidos do
@@ -194,6 +210,14 @@ async function captureAndQuit(
       await new Promise((done) => setTimeout(done, 1500));
       if (process.env["PRISM_SMOKE_EDIT"] === "1") {
         await rehearseEditing(window);
+      }
+      const layer = process.env["PRISM_SMOKE_LAYER"];
+      if (layer !== undefined) {
+        // Troca a camada em foco, que apaga as outras na viewport.
+        await window.webContents.executeJavaScript(
+          `document.querySelector('[data-layer="${layer}"]')?.click()`,
+        );
+        await new Promise((done) => setTimeout(done, 800));
       }
       if (process.env["PRISM_SMOKE_EVENTS"] === "1") {
         await rehearseEvents(window);

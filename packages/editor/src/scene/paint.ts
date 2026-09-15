@@ -443,3 +443,30 @@ function write(
   refreshAround(next, grid, layer, touched);
   return { tiles: next, changed };
 }
+
+/** Area que uma pincelada cobre, em celulas, relativa a celula clicada. */
+export interface Footprint {
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+}
+
+/**
+ * A area que o carimbo vai cobrir.
+ *
+ * A mesma regra que o `stampAt` usa para escrever, exposta para o cursor
+ * poder desenhar exatamente o que vai ser pintado. Separar as duas contas
+ * seria pedir para o cursor mentir na primeira vez que uma delas mudasse.
+ */
+export function brushFootprint(stamp: Stamp, size?: number): Footprint {
+  const single = stamp.width === 1 && stamp.height === 1;
+  if (!single) {
+    return { left: 0, top: 0, width: stamp.width, height: stamp.height };
+  }
+
+  const side = Math.max(1, size ?? 1);
+  const reach = Math.floor(side / 2);
+  const start = reach === 0 ? 0 : -reach;
+  return { left: start, top: start, width: reach * 2 + 1, height: reach * 2 + 1 };
+}

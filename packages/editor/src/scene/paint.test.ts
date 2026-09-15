@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   autotileFamily,
   autotileTileId,
+  brushFootprint,
   fillRect,
   floodFill,
   index,
@@ -376,5 +377,55 @@ describe("balde", () => {
       stamp: singleStamp(400),
     });
     expect(changed).toBe(0);
+  });
+});
+
+describe("área do pincel", () => {
+  it("um tile só com pincel 1 cobre a célula clicada", () => {
+    expect(brushFootprint(singleStamp(400), 1)).toEqual({
+      left: 0,
+      top: 0,
+      width: 1,
+      height: 1,
+    });
+  });
+
+  it("um tile só com pincel maior cobre um quadrado centrado", () => {
+    expect(brushFootprint(singleStamp(400), 5)).toEqual({
+      left: -2,
+      top: -2,
+      width: 5,
+      height: 5,
+    });
+  });
+
+  it("um bloco manda no pincel e ancora no canto", () => {
+    const stamp = { width: 3, height: 2, tiles: [1, 2, 3, 4, 5, 6] };
+    expect(brushFootprint(stamp, 5)).toEqual({
+      left: 0,
+      top: 0,
+      width: 3,
+      height: 2,
+    });
+  });
+
+  it("bate com o que o carimbo escreve de verdade", () => {
+    // A área desenhada pelo cursor e a área escrita têm que ser a mesma, ou o
+    // cursor mente. Aqui as duas são comparadas contagem por contagem, longe
+    // da borda para o recorte do mapa não entrar na conta.
+    const wide = { width: 9, height: 9 };
+    const tiles = new Uint16Array(wide.width * wide.height * 3);
+
+    for (const size of [1, 3, 5]) {
+      const area = brushFootprint(singleStamp(400), size);
+      const { changed } = stampAt(tiles, wide, {
+        x: 4,
+        y: 4,
+        layer: 0,
+        stamp: singleStamp(400),
+        size,
+      });
+      expect(changed).toBe(area.width * area.height);
+    }
   });
 });

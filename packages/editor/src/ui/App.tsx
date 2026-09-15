@@ -2,6 +2,7 @@ import { Grid3x3 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { applyBrush, levelTo } from "../scene/elevation.js";
 import {
+  brushFootprint,
   fillRect,
   floodFill,
   singleStamp,
@@ -18,7 +19,7 @@ import { ToolBar, type ToolId } from "./chrome/ToolBar.jsx";
 import { TopBar } from "./chrome/TopBar.jsx";
 import { useProject, type Draft } from "./useProject.js";
 import { Viewport, type ViewportHandle } from "./Viewport.jsx";
-import type { PickedCell } from "./viewport/scene3d.js";
+import { ZOOM_STEPS, type PickedCell, type Zoom } from "./viewport/scene3d.js";
 
 /** O que um traco precisa lembrar entre o apertar e o soltar do botao. */
 interface Stroke {
@@ -42,6 +43,7 @@ export function App() {
   const [stamp, setStamp] = useState<Stamp>(singleStamp(384));
   const [view, setView] = useState<"2d" | "3d">("2d");
   const [grid, setGrid] = useState(true);
+  const [zoom, setZoom] = useState<Zoom>(1);
   const [hovered, setHovered] = useState<PickedCell | null>(null);
   const [event, setEvent] = useState<number | null>(null);
   const [message, setMessage] = useState<string | null>(null);
@@ -214,6 +216,34 @@ export function App() {
     stroke.current = null;
   }, []);
 
+  /**
+   * Anda um degrau de zoom.
+   *
+   * Sempre em escala inteira, nunca contínua: a viewport desenha pixel art, e
+   * escala quebrada deixa uma coluna de tiles com um pixel a mais que a
+   * vizinha. Vindo de "fit", o primeiro passo cai em 100 por cento.
+   */
+  const stepZoom = useCallback(
+    (direction: 1 | -1) => {
+      setZoom((current) => {
+        if (current === "fit") return 1;
+        const at = ZOOM_STEPS.indexOf(current as (typeof ZOOM_STEPS)[number]);
+        const next = ZOOM_STEPS[Math.min(Math.max(at + direction, 0), ZOOM_STEPS.length - 1)];
+        return next ?? current;
+      });
+    },
+    [],
+  );
+
+  useEffect(() => {
+    viewport.current?.setZoom(zoom);
+  }, [zoom, state.map]);
+
+  /** A camada em foco só faz sentido enquanto se desenha tile. */
+  useEffect(() => {
+    viewport.current?.setActiveLayer(mode === "draw" ? layer : null);
+  }, [mode, layer, project.revision, state.map]);
+
   const doSave = useCallback(() => {
     void project
       .save()
@@ -308,6 +338,14 @@ export function App() {
 
   const projectName =
     state.project?.root.split("/").filter(Boolean).pop() ?? "no project";
+
+  // A área que a ferramenta cobriria, para o cursor mostrar antes de pintar.
+  const area =
+    mode === "terrain"
+      ? brushFootprint(singleStamp(0), brush)
+      : mode === "events"
+        ? { left: 0, top: 0, width: 1, height: 1 }
+        : brushFootprint(tool === "erase" ? singleStamp(0) : stamp, brush);
 
   const brushLabel =
     stamp.width === 1 && stamp.height === 1
@@ -407,6 +445,8 @@ export function App() {
               ref={viewport}
               map={state.map}
               editable={view === "2d"}
+              area={area}
+              onZoomStep={stepZoom}
               onHover={setHovered}
               onStrokeStart={onStrokeStart}
               onStrokeMove={onStrokeMove}
@@ -433,6 +473,9 @@ export function App() {
           map={state.map}
           hovered={hovered}
           height={height}
+          zoom={zoom}
+          onZoom={setZoom}
+          onZoomStep={stepZoom}
           message={
             message ??
             (mode === "draw"

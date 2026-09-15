@@ -113,6 +113,7 @@ export function ToolBar({
                 type="button"
                 onClick={() => onLayer(value)}
                 aria-pressed={value === layer}
+                data-layer={value}
                 className={`px-2.5 py-1 font-mono text-[11px] transition-colors ${
                   value === layer
                     ? "bg-brand/20 text-brand"
