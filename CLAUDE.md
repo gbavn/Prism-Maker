@@ -215,6 +215,38 @@ O que existe hoje é o caminho que funciona sem tocar no motor:
    `Spriteset_Map` pelo gancho oficial `:on_new_spriteset_map`. O spriteset
    passa a atualizar e descartar cada um, então não há alias em script do kit.
 
+### 3D de verdade no jogo, em andamento
+
+O caminho acima coloca o objeto no jogo como imagem. Para **malha de verdade
+dentro do jogo**, o caminho é o fork do mkxp-z, que é o passo 6 do
+`ARCHITECTURE.md`. A investigação do runtime está feita e o protótipo do
+renderizador vive em `tools/prism3d-prototype/`, com o que ele prova descrito
+no README de lá. Ele não faz parte do build do editor.
+
+Fatos do mkxp-z já apurados no fonte, para não reinvestigar:
+
+- o contexto OpenGL nasce em `src/main.cpp:533` e fica corrente **na mesma
+  thread que roda o Ruby** (`rgssThreadFun`, `src/main.cpp:119-130`);
+- o quadro compõe em `ScreenScene::composite` (`src/display/graphics.cpp:507`)
+  e apresenta em `swapGLBuffer` (`graphics.cpp:1006`);
+- cada coisa desenhável é um `SceneElement` com `draw()`, chamados em ordem de
+  z por `Scene::composite` (`src/display/gl/scene.cpp:91`). O contrato de
+  estado de GL está escrito em `src/display/gl/scene.h:88-104`;
+- **não existe buffer de profundidade**: `GLState` não o conhece e os alvos da
+  tela são só cor (`PingPong`, `graphics.cpp:441`). Nada é multisampled, e os
+  blits usam só `GL_COLOR_BUFFER_BIT`;
+- o alvo corrente **troca no meio do quadro** quando uma viewport tem tom de
+  cinza (`graphics.cpp:539-541`), então profundidade precisa ser anexada aos
+  dois alvos do PingPong, e recriada no resize;
+- o carregador de funções GL não tem `DepthFunc`, `DepthMask`, `ClearDepth`,
+  `CullFace`, `GenRenderbuffers`, `RenderbufferStorage` nem
+  `FramebufferRenderbuffer`: faltam sete entradas em
+  `src/display/gl/gl-fun.h`;
+- bindings novos entram por um arquivo em `binding/` mais uma linha em
+  `mriBindingInit` (`binding/binding-mri.cpp:160-191`);
+- o mkxp-z é GPL v2 ou posterior, e com HTTPS ligado o binário sai GPL v3:
+  distribuir o executável obriga a publicar o fonte do fork.
+
 A técnica de guardar dado extra em ivar dentro do `.rxdata` veio da
 integração do **Maker Studio**, que faz o mesmo com `@extended_layers`. A
 diferença: eles gravam uma string JSON e trazem um parser próprio, porque o
