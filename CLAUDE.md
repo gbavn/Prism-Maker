@@ -20,6 +20,8 @@ pull request e não pedir merge manual, a menos que seja pedido.
 
 - `ARCHITECTURE.md` documento de arquitetura, fonte da verdade do projeto.
 - `docs/scene-format.md` especificação do contrato entre editor e runtime.
+- `docs/runtime-3d.md` o caminho para malha 3D real dentro do jogo, via fork
+  do mkxp-z: investigação, patch mínimo e próximos passos.
 - `packages/scene-format/` schema, validação e tipos compartilhados.
 - `packages/rxdata-parser/` leitura e escrita de `.rxdata` (Ruby Marshal 4.8).
 - `packages/editor/` editor em Electron, React, Tailwind e Three.js.
@@ -219,11 +221,16 @@ O que existe hoje é o caminho que funciona sem tocar no motor:
 
 O caminho acima coloca o objeto no jogo como imagem. Para **malha de verdade
 dentro do jogo**, o caminho é o fork do mkxp-z, que é o passo 6 do
-`ARCHITECTURE.md`. A investigação do runtime está feita e o protótipo do
-renderizador vive em `tools/prism3d-prototype/`, com o que ele prova descrito
-no README de lá. Ele não faz parte do build do editor.
+`ARCHITECTURE.md`.
 
-Fatos do mkxp-z já apurados no fonte, para não reinvestigar:
+**Antes de tocar nesse assunto, leia `docs/runtime-3d.md`.** Ele é o documento
+de continuidade: traz o mapa do runtime com arquivo e linha, o patch mínimo
+arquivo por arquivo, a API Ruby do primeiro marco, o passo a passo do fork e
+do build pela CI, e uma tabela de diagnóstico. O protótipo do renderizador,
+já funcionando, vive em `tools/prism3d-prototype/` e não faz parte do build do
+editor.
+
+Resumo dos fatos apurados no fonte, com o detalhe no documento:
 
 - o contexto OpenGL nasce em `src/main.cpp:533` e fica corrente **na mesma
   thread que roda o Ruby** (`rgssThreadFun`, `src/main.cpp:119-130`);
@@ -238,10 +245,9 @@ Fatos do mkxp-z já apurados no fonte, para não reinvestigar:
 - o alvo corrente **troca no meio do quadro** quando uma viewport tem tom de
   cinza (`graphics.cpp:539-541`), então profundidade precisa ser anexada aos
   dois alvos do PingPong, e recriada no resize;
-- o carregador de funções GL não tem `DepthFunc`, `DepthMask`, `ClearDepth`,
-  `CullFace`, `GenRenderbuffers`, `RenderbufferStorage` nem
-  `FramebufferRenderbuffer`: faltam sete entradas em
-  `src/display/gl/gl-fun.h`;
+- faltam **catorze** entradas no carregador de funções GL
+  (`src/display/gl/gl-fun.h`), entre elas `DepthFunc`, `DepthMask`,
+  `ClearDepth`, `CullFace` e as de renderbuffer. Lista completa no documento;
 - bindings novos entram por um arquivo em `binding/` mais uma linha em
   `mriBindingInit` (`binding/binding-mri.cpp:160-191`);
 - o mkxp-z é GPL v2 ou posterior, e com HTTPS ligado o binário sai GPL v3:
