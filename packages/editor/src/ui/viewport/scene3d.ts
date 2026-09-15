@@ -1,10 +1,14 @@
 import {
   AmbientLight,
+  BoxGeometry,
   BufferAttribute,
   BufferGeometry,
   Color,
+  DirectionalLight,
   DoubleSide,
+  Group,
   Mesh,
+  MeshLambertMaterial,
   MeshBasicMaterial,
   MOUSE,
   LineBasicMaterial,
@@ -26,6 +30,7 @@ import {
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { LAYER_GAP, type BuiltScene, type SceneBillboard } from "../../scene/buildScene.js";
 import { TILE_PIXELS } from "../../scene/tileAtlas.js";
+import { bounds, MODELS, pivot } from "../../scene/model.js";
 import {
   objectKey,
   placeSprite,
@@ -193,7 +198,13 @@ export function createViewport(canvas: HTMLCanvasElement): Viewport {
   renderer.setPixelRatio(window.devicePixelRatio);
 
   const scene = new Scene();
-  scene.add(new AmbientLight(0xffffff, 1));
+  // Os tiles usam material sem iluminacao, entao estas luzes so alcancam a
+  // geometria dos objetos 3D. Mesma direcao do sol usado ao assar a imagem,
+  // para a peca em 3D e a imagem do 2D terem o mesmo volume.
+  scene.add(new AmbientLight(0xffffff, 0.68));
+  const sun = new DirectionalLight(0xffffff, 1.4);
+  sun.position.set(-3, 6, -2.4);
+  scene.add(sun);
 
   let mode: ViewMode = "2d";
   let camera: Camera = new OrthographicCamera(-10, 10, 10, -10, 0.1, 4000);
@@ -224,6 +235,8 @@ export function createViewport(canvas: HTMLCanvasElement): Viewport {
     mesh: Mesh;
     object: BuiltScene["objects"][number];
     size: CharsetImageSize;
+    /** A geometria de verdade, usada so na vista 3D. */
+    solid: Group | null;
   }[] = [];
   const marks: { mesh: Mesh; id: number }[] = [];
   let marksOn = false;
@@ -331,6 +344,15 @@ export function createViewport(canvas: HTMLCanvasElement): Viewport {
       scene.remove(mesh);
       mesh.geometry.dispose();
       (mesh.material as MeshBasicMaterial).dispose();
+    }
+    for (const { solid } of placed) {
+      if (solid === null) continue;
+      scene.remove(solid);
+      for (const child of solid.children) {
+        if (!(child instanceof Mesh)) continue;
+        child.geometry.dispose();
+        (child.material as MeshLambertMaterial).dispose();
+      }
     }
     meshes.length = 0;
     sprites.length = 0;
@@ -617,10 +639,60 @@ export function createViewport(canvas: HTMLCanvasElement): Viewport {
       mesh.name = `object:${object.name}`;
       mesh.renderOrder = 5;
       scene.add(mesh);
-      placed.push({ mesh, object, size });
+      placed.push({ mesh, object, size, solid: buildSolid(target, object) });
     }
 
     layoutObjects(target);
+  }
+
+  /**
+   * A geometria de verdade do objeto, para a vista 3D.
+   *
+   * Em 2D o objeto e a imagem assada, porque o 2D tem que mostrar exatamente
+   * o que o jogo mostra. Em 3D a cena inteira e geometria, e um cartao
+   * chapado no meio dela denuncia na hora que aquilo nao e um objeto. Como o
+   * modelo ja esta descrito em caixas, montar as caixas custa pouco.
+   */
+  function buildSolid(target: BuiltScene, object: BuiltScene["objects"][number]): Group | null {
+    const model = MODELS[object.name]?.();
+    if (model === undefined) return null;
+
+    const box = bounds(model);
+    const centre = pivot(model);
+    const size = target.tileSize;
+
+    const group = new Group();
+    group.rotation.y = (-model.yaw * Math.PI) / 180;
+
+    // O canto noroeste da area reservada, e de onde o resto se mede.
+    const westX = object.x * size - size / 2;
+    const northZ = object.y * size - size / 2;
+    group.position.set(
+      westX + (centre[0] - (box.min[0] ?? 0)) * size,
+      object.base,
+      northZ + (centre[1] - (box.min[2] ?? 0)) * size,
+    );
+
+    for (const entry of model.boxes) {
+      const mesh = new Mesh(
+        new BoxGeometry(
+          (entry.size[0] ?? 0) * size,
+          (entry.size[1] ?? 0) * size,
+          (entry.size[2] ?? 0) * size,
+        ),
+        new MeshLambertMaterial({ color: entry.color }),
+      );
+      mesh.position.set(
+        ((entry.at[0] ?? 0) - centre[0]) * size,
+        (entry.at[1] ?? 0) * size,
+        ((entry.at[2] ?? 0) - centre[1]) * size,
+      );
+      group.add(mesh);
+    }
+
+    group.visible = false;
+    scene.add(group);
+    return group;
   }
 
   /**
@@ -633,7 +705,13 @@ export function createViewport(canvas: HTMLCanvasElement): Viewport {
   function layoutObjects(target: BuiltScene): void {
     const unit = target.tileSize / TILE_PIXELS;
 
-    for (const { mesh, object, size } of placed) {
+    for (const { mesh, object, size, solid } of placed) {
+      // Em 3D vale a geometria; em 2D vale a imagem, que e a do jogo.
+      if (solid !== null) {
+        solid.visible = mode === "3d";
+        mesh.visible = mode === "2d";
+      }
+
       const width = size.width * unit;
       const height = size.height * unit;
 

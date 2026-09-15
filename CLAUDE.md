@@ -207,7 +207,11 @@ O que existe hoje é o caminho que funciona sem tocar no motor:
    no chão. Sem ela o encaixe seria adivinhação, porque a imagem tem margem
    para a sombra caber e o objeto girado não encosta nas bordas dela. Com ela,
    posicionar é uma subtração, e vale para qualquer modelo, giro ou tamanho.
-5. `Plugins/Prism/` lê essa ivar e cria um `Sprite` por objeto, entregue ao
+5. Na viewport, o objeto aparece de dois jeitos: em **2D** como a imagem
+   assada, que é exatamente o que o jogo mostra, e em **3D** como geometria de
+   verdade, montada das mesmas caixas. Em 3D a cena inteira é geometria, e um
+   cartão chapado no meio dela denuncia na hora que aquilo não é um objeto.
+6. `Plugins/Prism/` lê essa ivar e cria um `Sprite` por objeto, entregue ao
    `Spriteset_Map` pelo gancho oficial `:on_new_spriteset_map`. O spriteset
    passa a atualizar e descartar cada um, então não há alias em script do kit.
 
