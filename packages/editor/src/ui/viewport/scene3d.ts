@@ -22,7 +22,12 @@ import {
   type Camera,
 } from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
-import type { BuiltScene } from "../../scene/buildScene.js";
+import { LAYER_GAP, type BuiltScene, type SceneBillboard } from "../../scene/buildScene.js";
+import {
+  placeSprite,
+  spriteSource,
+  type ImageSize as CharsetImageSize,
+} from "../../scene/charset.js";
 import {
   buildTileGeometry,
   cellOfFace,
@@ -64,6 +69,10 @@ export interface Viewport {
   show(scene: BuiltScene, images: ViewportImages): Promise<void>;
   pickCell(x: number, y: number): PickedCell | null;
   highlight(cell: PickedCell | null): void;
+  /** Marca a celula de cada evento, para os que quase nao aparecem. */
+  setEventMarks(on: boolean): void;
+  /** Destaca um evento pelo id, ou nenhum. */
+  selectEvent(id: number | null): void;
   setMode(mode: ViewMode): void;
   resize(): void;
   dispose(): void;
@@ -95,6 +104,41 @@ function loadTexture(url: string): Promise<Texture> {
   });
 }
 
+/**
+ * Um quadrado vazado de lado um, no plano XY.
+ *
+ * Contorno e nao preenchimento, e a diferenca importa: a marca de um evento
+ * cai em cima de um sprite que pode ser opaco e do tamanho da celula, como e o
+ * caso das portas. Preenchimento esconderia justamente o que a marca aponta.
+ */
+function outlineGeometry(thickness: number): BufferGeometry {
+  const outer = 0.5;
+  const inner = 0.5 - thickness;
+
+  const positions: number[] = [];
+  const indices: number[] = [];
+
+  /** Uma barra do contorno, em sentido anti horario. */
+  const bar = (x0: number, y0: number, x1: number, y1: number) => {
+    const base = positions.length / 3;
+    positions.push(x0, y0, 0, x1, y0, 0, x1, y1, 0, x0, y1, 0);
+    indices.push(base, base + 1, base + 2, base, base + 2, base + 3);
+  };
+
+  bar(-outer, inner, outer, outer);
+  bar(-outer, -outer, outer, -inner);
+  bar(-outer, -inner, -inner, inner);
+  bar(inner, -inner, outer, inner);
+
+  const geometry = new BufferGeometry();
+  geometry.setAttribute(
+    "position",
+    new BufferAttribute(new Float32Array(positions), 3),
+  );
+  geometry.setIndex(new BufferAttribute(new Uint32Array(indices), 1));
+  return geometry;
+}
+
 export function createViewport(canvas: HTMLCanvasElement): Viewport {
   const renderer = new WebGLRenderer({
     canvas,
@@ -116,6 +160,24 @@ export function createViewport(canvas: HTMLCanvasElement): Viewport {
   const meshes: Mesh[] = [];
   const geometries = new Map<Mesh, AtlasGeometry>();
   /**
+   * Os sprites de evento, separados das malhas de tile.
+   *
+   * Um mesh por evento, e nao uma malha unica: em 3D cada sprite gira sozinho
+   * para encarar a camera, e malha unida so gira inteira. Sao dezenas de
+   * eventos por mapa, entao o custo nao aparece.
+   */
+  const sprites: { mesh: Mesh; billboard: SceneBillboard }[] = [];
+  /**
+   * Uma marca no chao por evento.
+   *
+   * Sem isso, metade dos eventos e invisivel para quem edita: porta e aviso
+   * usam charset quase transparente de proposito, porque no jogo eles nao
+   * devem aparecer. No editor eles precisam.
+   */
+  const marks: { mesh: Mesh; id: number }[] = [];
+  let marksOn = false;
+  let selected: number | null = null;
+  /**
    * Textura por URL, viva enquanto a viewport existir.
    *
    * Recarregar a cada redesenho parece inofensivo e nao e: cada pincelada
@@ -129,6 +191,8 @@ export function createViewport(canvas: HTMLCanvasElement): Viewport {
 
   let built: BuiltScene | null = null;
   let framedFor = "";
+  /** Tamanhos das imagens do ultimo desenho, para recolocar ao trocar de vista. */
+  let lastSizes: ReadonlyMap<string, ImageSize> = new Map();
 
   const marker = new Mesh(
     new PlaneGeometry(1, 1),
@@ -145,14 +209,21 @@ export function createViewport(canvas: HTMLCanvasElement): Viewport {
   marker.visible = false;
   scene.add(marker);
 
-  /** Remove as malhas. As texturas ficam no cache, vivas. */
+  /** Remove as malhas e os sprites. As texturas ficam no cache, vivas. */
   function clear(): void {
-    for (const mesh of meshes) {
+    const all = [
+      ...meshes,
+      ...sprites.map((entry) => entry.mesh),
+      ...marks.map((entry) => entry.mesh),
+    ];
+    for (const mesh of all) {
       scene.remove(mesh);
       mesh.geometry.dispose();
       (mesh.material as MeshBasicMaterial).dispose();
     }
     meshes.length = 0;
+    sprites.length = 0;
+    marks.length = 0;
     geometries.clear();
   }
 
@@ -233,6 +304,128 @@ export function createViewport(canvas: HTMLCanvasElement): Viewport {
     place(target);
   }
 
+  /**
+   * Monta os sprites dos eventos.
+   *
+   * O plano tem uma unidade e o tamanho real sai da escala, para o mesmo mesh
+   * servir a qualquer charset sem refazer geometria a cada troca de vista.
+   */
+  function drawEvents(
+    target: BuiltScene,
+    sizes: ReadonlyMap<string, CharsetImageSize>,
+    loaded: ReadonlyMap<string, Texture>,
+  ): void {
+    for (const billboard of target.billboards) {
+      const source = spriteSource(billboard, sizes);
+
+      let material: MeshBasicMaterial;
+      let frame = { x: 0, y: 0, width: 32, height: 32 };
+
+      if (source.kind === "marker") {
+        // Evento sem grafico: um losango violeta, so para existir na tela e
+        // poder ser clicado.
+        material = new MeshBasicMaterial({
+          color: 0x9b8cfa,
+          transparent: true,
+          opacity: 0.7,
+          side: DoubleSide,
+        });
+      } else {
+        const texture = loaded.get(source.key);
+        const size = sizes.get(source.key);
+        if (texture === undefined || size === undefined) continue;
+        frame = source.frame;
+
+        // Recorte por UV em cima da textura compartilhada. Clonar a textura
+        // por evento daria uma copia por sprite para descartar depois, que e
+        // exatamente a corrida que ja custou caro aqui.
+        material = new MeshBasicMaterial({
+          map: texture,
+          alphaTest: 0.5,
+          transparent: billboard.opacity < 255,
+          opacity: billboard.opacity / 255,
+          side: DoubleSide,
+        });
+      }
+
+      const geometry = new PlaneGeometry(1, 1);
+      if (source.kind !== "marker") {
+        const size = sizes.get(source.key);
+        if (size !== undefined) {
+          const u0 = frame.x / size.width;
+          const u1 = (frame.x + frame.width) / size.width;
+          const v0 = 1 - frame.y / size.height;
+          const v1 = 1 - (frame.y + frame.height) / size.height;
+          geometry.setAttribute(
+            "uv",
+            new BufferAttribute(
+              new Float32Array([u0, v0, u1, v0, u0, v1, u1, v1]),
+              2,
+            ),
+          );
+        }
+      }
+
+      const mesh = new Mesh(geometry, material);
+      mesh.name = `event:${billboard.id}`;
+      mesh.renderOrder = 5;
+      scene.add(mesh);
+      sprites.push({ mesh, billboard });
+
+      const mark = new Mesh(
+        outlineGeometry(0.12),
+        new MeshBasicMaterial({
+          color: 0x9b8cfa,
+          transparent: true,
+          opacity: 0.55,
+          depthTest: false,
+          side: DoubleSide,
+        }),
+      );
+      mark.rotation.x = -Math.PI / 2;
+      mark.renderOrder = 8;
+      mark.scale.set(target.tileSize, target.tileSize, 1);
+      mark.position.set(
+        billboard.x,
+        billboard.base + LAYER_GAP * 5,
+        billboard.z,
+      );
+      mark.visible = false;
+      scene.add(mark);
+      marks.push({ mesh: mark, id: billboard.id });
+    }
+
+    layoutEvents(target, sizes);
+    paintMarks();
+  }
+
+  /**
+   * Poe cada sprite no lugar, do jeito da vista atual.
+   *
+   * Em 2D deitado no chao, que e como o RPG Maker mostra e nao tapa a celula
+   * de tras. Em 3D em pe, com os pes no chao. O mesmo evento, desenhado do
+   * jeito que faz sentido em cada vista.
+   */
+  function layoutEvents(
+    target: BuiltScene,
+    sizes: ReadonlyMap<string, CharsetImageSize>,
+  ): void {
+    for (const { mesh, billboard } of sprites) {
+      const source = spriteSource(billboard, sizes);
+      const frame =
+        source.kind === "marker"
+          ? { x: 0, y: 0, width: 16, height: 16 }
+          : source.frame;
+
+      const at = placeSprite(billboard, frame, target.tileSize, mode);
+      mesh.scale.set(at.width, at.height, 1);
+      mesh.position.set(at.x, at.y, at.z);
+      // O marcador nao tem pe: ele marca a celula, entao fica no meio dela.
+      if (source.kind === "marker" && mode === "2d") mesh.position.z = billboard.z;
+      mesh.rotation.set(mode === "2d" ? -Math.PI / 2 : 0, 0, 0);
+    }
+  }
+
   async function show(next: BuiltScene, images: ViewportImages): Promise<void> {
     const mine = ++generation;
 
@@ -286,6 +479,9 @@ export function createViewport(canvas: HTMLCanvasElement): Viewport {
       geometries.set(mesh, atlas);
     }
 
+    lastSizes = sizes;
+    drawEvents(next, sizes, loaded);
+
     frame(next);
     resize();
   }
@@ -321,6 +517,28 @@ export function createViewport(canvas: HTMLCanvasElement): Viewport {
     marker.visible = true;
   }
 
+  /** Aplica a visibilidade e o destaque das marcas de evento. */
+  function paintMarks(): void {
+    for (const { mesh, id } of marks) {
+      mesh.visible = marksOn;
+      const material = mesh.material as MeshBasicMaterial;
+      const chosen = id === selected;
+      material.opacity = chosen ? 1 : 0.55;
+      material.color.set(chosen ? 0xffffff : 0x9b8cfa);
+    }
+  }
+
+  function setEventMarks(on: boolean): void {
+    marksOn = on;
+    paintMarks();
+  }
+
+
+  function selectEvent(id: number | null): void {
+    selected = id;
+    paintMarks();
+  }
+
   function setMode(next: ViewMode): void {
     if (next === mode) return;
     mode = next;
@@ -333,12 +551,29 @@ export function createViewport(canvas: HTMLCanvasElement): Viewport {
     controls = new OrbitControls(camera, canvas);
 
     framedFor = "";
-    if (built !== null) frame(built);
-    else resize();
+    if (built !== null) {
+      layoutEvents(built, lastSizes);
+      frame(built);
+    } else {
+      resize();
+    }
   }
 
   renderer.setAnimationLoop(() => {
     controls.update();
+
+    // Em 3D o sprite gira so no eixo vertical para encarar a camera, sem
+    // deitar junto com a inclinacao. E o que jogo 2.5D faz: o personagem
+    // continua de pe por mais que a camera olhe de cima.
+    if (mode === "3d") {
+      for (const { mesh } of sprites) {
+        mesh.rotation.y = Math.atan2(
+          camera.position.x - mesh.position.x,
+          camera.position.z - mesh.position.z,
+        );
+      }
+    }
+
     renderer.render(scene, camera);
   });
 
@@ -346,6 +581,8 @@ export function createViewport(canvas: HTMLCanvasElement): Viewport {
     show,
     pickCell,
     highlight,
+    setEventMarks,
+    selectEvent,
     setMode,
     resize,
     dispose(): void {

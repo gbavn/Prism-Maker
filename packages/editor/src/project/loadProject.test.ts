@@ -34,6 +34,14 @@ beforeAll(() => {
   for (const file of ["MapInfos.rxdata", "Tilesets.rxdata", "Map002.rxdata"]) {
     copyFileSync(join(sourceData, file), join(root, "Data", file));
   }
+
+  // Charsets vazios, so para a resolucao de caminho ter o que achar. Um deles
+  // sai com a caixa trocada de proposito: e assim que projeto feito no Windows
+  // chega aqui, e em Linux isso e a diferenca entre achar e nao achar.
+  mkdirSync(join(root, "Graphics", "Characters"), { recursive: true });
+  for (const file of ["NPC 06.png", "Doors3.png", "doors5.png"]) {
+    writeFileSync(join(root, "Graphics", "Characters", file), "");
+  }
 });
 
 afterAll(() => {
@@ -140,6 +148,40 @@ describe("gravar tiles no .rxdata", () => {
     expect(reopened.tiles[0]).toBe(800);
     expect(reopened.tiles[32 * 21 + 5]).toBe(0);
     expect(reopened.tiles[2 * 32 * 21 + 10]).toBe(1200);
+  });
+
+  it("traz os eventos do mapa com a página um", () => {
+    const opened = openMap(root, 2);
+    // Lappet Town: três portas e um NPC que explica as portas.
+    expect(opened.events.map((entry) => entry.name)).toEqual([
+      "Home door",
+      "Lab door",
+      "Door explainer",
+      "Next door",
+    ]);
+
+    const explainer = opened.events.find(
+      (entry) => entry.name === "Door explainer",
+    );
+    expect(explainer?.pages[0]?.characterName).toBe("NPC 06");
+    // A contagem de comandos é o que responde "esse evento faz alguma coisa?".
+    expect(explainer?.pages[0]?.commands).toBeGreaterThan(0);
+  });
+
+  it("resolve só os charsets que o mapa usa", () => {
+    const opened = openMap(root, 2);
+    // Nem a pasta inteira de personagens, nem uma lista vazia: só os três
+    // charsets que os eventos deste mapa pedem.
+    expect(Object.keys(opened.graphics.characters).sort()).toEqual([
+      "NPC 06",
+      "doors3",
+      "doors5",
+    ]);
+    // O arquivo em disco e Doors3.png, com D maiusculo, e o .rxdata pede
+    // doors3. Tem que achar mesmo assim.
+    expect(opened.graphics.characters["doors3"]).toBe(
+      "Graphics/Characters/Doors3.png",
+    );
   });
 
   it("preserva tudo que não é tile", () => {

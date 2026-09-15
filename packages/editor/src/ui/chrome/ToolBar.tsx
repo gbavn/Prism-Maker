@@ -1,17 +1,19 @@
 import {
+  CopyPlus,
   Eraser,
   MousePointer2,
   MoveDiagonal,
   PaintBucket,
   Pencil,
   Square,
+  Trash2,
 } from "lucide-react";
 import { Soon } from "./Soon.jsx";
 
 export type ToolId = "pencil" | "rectangle" | "fill" | "erase";
 
 interface Props {
-  mode: "draw" | "terrain";
+  mode: "draw" | "terrain" | "events";
   tool: ToolId;
   onTool: (tool: ToolId) => void;
   brush: number;
@@ -57,6 +59,42 @@ export function ToolBar({
   step,
   onSoon,
 }: Props) {
+  // Em Events nada do resto da barra serve: nao ha camada, nem pincel, nem
+  // ferramenta de pintar. Repetir os controles ali so ensinaria errado.
+  if (mode === "events") {
+    return (
+      <div className="flex items-center gap-1 rounded-lg border border-edge bg-panel px-2 py-1.5">
+        <span className={`${chip} ${active}`}>
+          <MousePointer2 className="h-3.5 w-3.5" strokeWidth={1.8} />
+          Select
+        </span>
+        <span className="text-[11px] text-dim">
+          click an event on the map or in the list
+        </span>
+
+        <span className="mx-1 h-5 w-px bg-edge" />
+
+        {[
+          { label: "New event", icon: CopyPlus },
+          { label: "Delete event", icon: Trash2 },
+        ].map((entry) => {
+          const Glyph = entry.icon;
+          return (
+            <Soon
+              key={entry.label}
+              label={entry.label}
+              onSoon={onSoon}
+              className={`${chip} ${idle} pr-3.5`}
+            >
+              <Glyph className="h-3.5 w-3.5" strokeWidth={1.8} />
+              {entry.label}
+            </Soon>
+          );
+        })}
+      </div>
+    );
+  }
+
   const tools = mode === "terrain" ? TOOLS.slice(0, 1) : TOOLS;
 
   return (

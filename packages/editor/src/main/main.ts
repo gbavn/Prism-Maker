@@ -142,6 +142,34 @@ async function rehearseEditing(window: BrowserWindow): Promise<void> {
   await wait(400);
 }
 
+/**
+ * Ensaio do modo Events.
+ *
+ * Entra no modo pela trilha lateral e clica na celula de um evento, que e o
+ * caminho que prova as duas coisas de uma vez: os sprites desenhados e a
+ * selecao por celula.
+ */
+async function rehearseEvents(window: BrowserWindow): Promise<void> {
+  const send = (event: Parameters<typeof window.webContents.sendInputEvent>[0]) =>
+    window.webContents.sendInputEvent(event);
+  const wait = (ms: number) => new Promise((done) => setTimeout(done, ms));
+
+  const click = async (x: number, y: number) => {
+    send({ type: "mouseMove", x, y });
+    await wait(150);
+    send({ type: "mouseDown", x, y, button: "left", clickCount: 1 });
+    send({ type: "mouseUp", x, y, button: "left", clickCount: 1 });
+    await wait(400);
+  };
+
+  // Modo Events na trilha lateral.
+  await click(27, 174);
+
+  // A celula do NPC que explica as portas, em 12,7 no mapa.
+  await click(595, 357);
+  await wait(400);
+}
+
 async function captureAndQuit(
   window: BrowserWindow,
   target: string,
@@ -158,16 +186,16 @@ async function captureAndQuit(
       if (process.env["PRISM_SMOKE_EDIT"] === "1") {
         await rehearseEditing(window);
       }
+      if (process.env["PRISM_SMOKE_EVENTS"] === "1") {
+        await rehearseEvents(window);
+      }
       if (process.env["PRISM_SMOKE_3D"] === "1") {
-        // Clica no botao 3D da barra de ferramentas.
-        window.webContents.sendInputEvent({ type: "mouseMove", x: 1007, y: 129 });
-        window.webContents.sendInputEvent({
-          type: "mouseDown", x: 1007, y: 129, button: "left", clickCount: 1,
-        });
-        window.webContents.sendInputEvent({
-          type: "mouseUp", x: 1007, y: 129, button: "left", clickCount: 1,
-        });
-        await new Promise((done) => setTimeout(done, 1200));
+        // Pelo seletor e nao por coordenada: o botao anda na tela conforme o
+        // painel da direita muda de largura, e o ensaio quebrava junto.
+        await window.webContents.executeJavaScript(
+          'document.querySelector(\'[data-view="3d"]\')?.click()',
+        );
+        await new Promise((done) => setTimeout(done, 1500));
       }
       const image = await window.webContents.capturePage();
       writeFileSync(target, image.toPNG());

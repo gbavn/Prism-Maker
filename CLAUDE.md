@@ -71,6 +71,13 @@ edita, em 3D se olha.
 Modo **Terrain**: clique sobe, shift mais clique desce, L nivela o bloco.
 Grava no `.scene.json`.
 
+Modo **Events**: lista os eventos do mapa, clicar na lista ou na célula
+seleciona, e o painel mostra a página um como ela está no `.rxdata`. Ainda é
+só leitura: criar, mover e editar evento vêm depois. Evento é desenhado com o
+frame certo do charset, deitado no chão em 2D e em pé no 3D. Toda célula com
+evento ganha um contorno violeta, porque porta e aviso usam charset quase
+transparente de propósito e sem a marca ficariam invisíveis para quem edita.
+
 Comum aos dois: teclas 1 2 3 trocam o pincel, ctrl+Z desfaz, ctrl+S grava. O
 desfazer é um só para os dois modos, porque quem aperta ctrl+Z espera voltar a
 última coisa que fez, não a última coisa que fez naquela ferramenta.
@@ -80,7 +87,9 @@ imagem: `PRISM_SMOKE_SHOT=/caminho/saida.png` faz o app subir, esperar a
 primeira cena e salvar um PNG antes de sair. Em máquina sem monitor, rodar
 com `xvfb-run`. Com `PRISM_SMOKE_EDIT=1` junto, o próprio Electron injeta
 mouse e teclado e desenha antes do print, o que exercita seleção, as
-ferramentas, a escolha de bloco na paleta e a reconstrução da cena.
+ferramentas, a escolha de bloco na paleta e a reconstrução da cena. Com
+`PRISM_SMOKE_EVENTS=1`, entra no modo Events e seleciona um evento pela
+célula. Com `PRISM_SMOKE_3D=1`, troca para 3D antes do print.
 
 Armadilhas já pagas na viewport, todas descobertas rodando o app:
 
@@ -99,6 +108,12 @@ Armadilhas já pagas na viewport, todas descobertas rodando o app:
   quatro quartos vem da tabela `AUTOTILE_PATTERNS` do Essentials, dentro do
   `Scripts.rxdata`. Autotile com 32 pixels de altura não tem forma, só quadros
   de animação;
+- charset de evento é a imagem dividida em quatro por quatro, a coluna vem do
+  `pattern` e a linha de `(direction - 2) / 2`, com os pés do sprite no rodapé
+  da célula. Verificado no `Sprite_Character` do `Scripts.rxdata`, não deduzido;
+- marca de evento é contorno, não preenchimento: o sprite de uma porta é opaco
+  e do tamanho da célula, e retângulo cheio esconde justamente o que a marca
+  aponta. Tapete por baixo também não serve, pelo mesmo motivo;
 - ao **pintar**, aí sim a vizinhança importa: a forma é recalculada pela
   tabela `NEIGHBORS_TO_AUTOTILE_INDEX`, também do Essentials. A comparação é
   por família de autotile, não por tile id exato, senão cada célula se acharia

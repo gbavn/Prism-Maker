@@ -18,7 +18,7 @@ import { Soon } from "./Soon.jsx";
 export const MODES = [
   { id: "draw", label: "Draw", icon: Brush, ready: true },
   { id: "terrain", label: "Terrain", icon: Mountain, ready: true },
-  { id: "events", label: "Events", icon: Users, ready: false },
+  { id: "events", label: "Events", icon: Users, ready: true },
   { id: "map", label: "Map", icon: MapIcon, ready: false },
   { id: "world", label: "World", icon: Globe2, ready: false },
   { id: "notes", label: "Notes", icon: StickyNote, ready: false },

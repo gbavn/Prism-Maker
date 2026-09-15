@@ -26,16 +26,32 @@ export interface TileQuad {
   y: number;
 }
 
-/** Um evento posicionado no mundo, desenhado como billboard. */
+/**
+ * Um evento posicionado no mundo.
+ *
+ * O tamanho do sprite nao vem daqui: o frame de um charset e a imagem dividida
+ * por quatro em cada eixo, e so quem ja carregou a imagem sabe o tamanho dela.
+ * Aqui fica o que o .rxdata diz, e a viewport calcula o resto.
+ */
 export interface SceneBillboard {
   id: number;
   name: string;
+  /** Celula do evento, que e por onde a selecao o encontra. */
+  cellX: number;
+  cellY: number;
   x: number;
   z: number;
   base: number;
-  height: number;
-  /** Nome do charset, vazio quando o evento nao tem grafico. */
+  /** Nome do charset, vazio quando o evento nao tem grafico de personagem. */
   characterName: string;
+  /** Direcao da pagina: 2 baixo, 4 esquerda, 6 direita, 8 cima. */
+  direction: number;
+  /** Coluna do frame dentro do charset. */
+  pattern: number;
+  /** Tile do tileset usado como grafico, ou zero quando e charset. */
+  tileId: number;
+  /** Opacidade da pagina, de 0 a 255. */
+  opacity: number;
 }
 
 /**
@@ -80,7 +96,7 @@ export interface BuiltScene {
  * disputam o mesmo plano e o resultado cintila conforme a camera se move. O
  * valor e pequeno o bastante para nao ler como degrau.
  */
-const LAYER_GAP = 0.004;
+export const LAYER_GAP = 0.004;
 
 export interface BuildSceneInput {
   map: RPGMap;
@@ -169,12 +185,18 @@ export function buildScene(input: BuildSceneInput): BuiltScene {
     billboards.push({
       id: event.id,
       name: event.name,
+      cellX: event.x,
+      cellY: event.y,
       x: event.x * tileSize,
       z: event.y * tileSize,
       base: surface[index] ?? 0,
-      // Altura de um personagem do Essentials: dois tiles de 32 pixels.
-      height: tileSize * 1.5,
       characterName: page?.graphic.characterName ?? "",
+      // Sem pagina, o evento nao desenha nada, mas continua existindo e
+      // precisa aparecer para quem edita. A viewport marca esse caso.
+      direction: page?.graphic.direction ?? 2,
+      pattern: page?.graphic.pattern ?? 0,
+      tileId: page?.graphic.tileId ?? 0,
+      opacity: page?.graphic.opacity ?? 255,
     });
   }
 

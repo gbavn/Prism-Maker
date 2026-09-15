@@ -52,6 +52,48 @@ export interface MapGraphics {
   tileset: string | null;
   /** Por indice de autotile, Graphics/Autotiles/<nome>.png ou null. */
   autotiles: (string | null)[];
+  /**
+   * Por nome de charset usado no mapa, Graphics/Characters/<nome>.png.
+   *
+   * So os charsets que este mapa usa: um projeto Essentials tem centenas
+   * deles, e mandar a lista inteira a cada troca de mapa nao serviria para
+   * nada.
+   */
+  characters: Record<string, string>;
+}
+
+/**
+ * Uma pagina de evento, sem a lista de comandos.
+ *
+ * Os comandos ficam de fora de proposito: um evento de dialogo longo tem
+ * centenas deles, e nada na interface de hoje os mostra. O que existe e a
+ * contagem, que ja responde "esse evento faz alguma coisa?".
+ */
+export interface EventPageSummary {
+  characterName: string;
+  direction: number;
+  pattern: number;
+  tileId: number;
+  opacity: number;
+  /** 0 acao, 1 contato com o jogador, 2 contato com evento, 3 automatico, 4 paralelo. */
+  trigger: number;
+  moveType: number;
+  moveSpeed: number;
+  moveFrequency: number;
+  walkAnime: boolean;
+  stepAnime: boolean;
+  directionFix: boolean;
+  through: boolean;
+  alwaysOnTop: boolean;
+  commands: number;
+}
+
+export interface EventSummary {
+  id: number;
+  name: string;
+  x: number;
+  y: number;
+  pages: EventPageSummary[];
 }
 
 export interface OpenedMap {
@@ -62,6 +104,8 @@ export interface OpenedMap {
   /** Altura de cada celula em degraus, na ordem de varredura do XP. */
   heights: number[];
   graphics: MapGraphics;
+  /** Os eventos do mapa, para a lista e a inspecao do modo Events. */
+  events: EventSummary[];
   /** Grade de tiles, largura por altura por três camadas, na ordem do XP. */
   tiles: Uint16Array;
   scene: BuiltScene;
@@ -109,13 +153,57 @@ function findGraphic(root: string, folder: string, name: string): string | null 
   }
 }
 
-function mapGraphics(root: string, tileset: RPGTileset): MapGraphics {
+function mapGraphics(
+  root: string,
+  tileset: RPGTileset,
+  map: RPGMap,
+): MapGraphics {
+  const characters: Record<string, string> = {};
+  for (const event of map.events.values()) {
+    for (const page of event.pages) {
+      const name = page.graphic.characterName;
+      if (name === "" || name in characters) continue;
+      const path = findGraphic(root, "Characters", name);
+      if (path !== null) characters[name] = path;
+    }
+  }
+
   return {
     tileset: findGraphic(root, "Tilesets", tileset.tilesetName),
     autotiles: tileset.autotileNames.map((name) =>
       findGraphic(root, "Autotiles", name),
     ),
+    characters,
   };
+}
+
+/** Resume os eventos do mapa para a janela, sem as listas de comando. */
+function mapEvents(map: RPGMap): EventSummary[] {
+  return [...map.events.values()]
+    .map((event) => ({
+      id: event.id,
+      name: event.name,
+      x: event.x,
+      y: event.y,
+      pages: event.pages.map((page) => ({
+        characterName: page.graphic.characterName,
+        direction: page.graphic.direction,
+        pattern: page.graphic.pattern,
+        tileId: page.graphic.tileId,
+        opacity: page.graphic.opacity,
+        trigger: page.trigger,
+        moveType: page.moveType,
+        moveSpeed: page.moveSpeed,
+        moveFrequency: page.moveFrequency,
+        walkAnime: page.walkAnime,
+        stepAnime: page.stepAnime,
+        directionFix: page.directionFix,
+        through: page.through,
+        alwaysOnTop: page.alwaysOnTop,
+        commands: page.commands.length,
+      })),
+    }))
+    .sort((a, b) => a.id - b.id);
 }
 
 function sceneFileName(id: number): string {
@@ -243,7 +331,8 @@ export function openMap(root: string, id: number): OpenedMap {
     id,
     name: infos.get(id)?.name ?? `Map${id}`,
     grid: { width: map.width, height: map.height },
-    graphics: mapGraphics(root, tileset),
+    graphics: mapGraphics(root, tileset, map),
+    events: mapEvents(map),
     tiles: new Uint16Array(map.data.data),
     heights,
     scene: buildScene({ map, tileset, project: loadManifest(root), heights }),

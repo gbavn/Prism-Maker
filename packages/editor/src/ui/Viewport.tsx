@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useImperativeHandle, useRef } from "react";
 import type { OpenedMap } from "../project/loadProject.js";
 import { assetUrl } from "../shared/ipc.js";
+import { characterKey } from "../scene/charset.js";
 import {
   createViewport,
   type PickedCell,
@@ -12,6 +13,8 @@ import type { BuiltScene } from "../scene/buildScene.js";
 export interface ViewportHandle {
   redraw: (scene: BuiltScene) => void;
   highlight: (cell: PickedCell | null) => void;
+  setEventMarks: (on: boolean) => void;
+  selectEvent: (id: number | null) => void;
   setMode: (mode: ViewMode) => void;
 }
 
@@ -40,6 +43,9 @@ function imagesOf(map: OpenedMap): Map<string, string> {
   map.graphics.autotiles.forEach((path, index) => {
     if (path !== null) sources.set(`autotile:${index}`, assetUrl(path));
   });
+  for (const [name, path] of Object.entries(map.graphics.characters)) {
+    sources.set(characterKey(name), assetUrl(path));
+  }
   return sources;
 }
 
@@ -94,6 +100,8 @@ export function Viewport({
         void view.show(scene, { sources: imagesOf(current) });
       },
       highlight: (cell) => viewRef.current?.highlight(cell),
+      setEventMarks: (on) => viewRef.current?.setEventMarks(on),
+      selectEvent: (id) => viewRef.current?.selectEvent(id),
       setMode: (mode) => viewRef.current?.setMode(mode),
     }),
     [map],

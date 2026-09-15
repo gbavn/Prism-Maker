@@ -7,6 +7,7 @@ import {
   stampAt,
   type Stamp,
 } from "../scene/paint.js";
+import { EventPanel } from "./chrome/EventPanel.jsx";
 import { MapPanel } from "./chrome/MapPanel.jsx";
 import { ModeRail, type ModeId } from "./chrome/ModeRail.jsx";
 import { SOON_LABEL } from "./chrome/Soon.jsx";
@@ -40,6 +41,7 @@ export function App() {
   const [stamp, setStamp] = useState<Stamp>(singleStamp(384));
   const [view, setView] = useState<"2d" | "3d">("2d");
   const [hovered, setHovered] = useState<PickedCell | null>(null);
+  const [event, setEvent] = useState<number | null>(null);
   const [message, setMessage] = useState<string | null>(null);
 
   const stroke = useRef<Stroke | null>(null);
@@ -146,8 +148,26 @@ export function App() {
     [state.map?.grid, mode, tool, brush, layer, stamp],
   );
 
+  /** Seleciona o evento que estiver na celula, se houver algum. */
+  const selectAt = useCallback(
+    (cell: PickedCell) => {
+      const found = state.map?.events.find(
+        (entry) => entry.x === cell.x && entry.y === cell.y,
+      );
+      setEvent(found?.id ?? null);
+      viewport.current?.selectEvent(found?.id ?? null);
+      setMessage(
+        found === undefined
+          ? "no event on this cell"
+          : `${found.name === "" ? `Event ${found.id}` : found.name} · ${found.pages.length} page${found.pages.length === 1 ? "" : "s"}`,
+      );
+    },
+    [state.map?.events],
+  );
+
   const onStrokeStart = useCallback(
     (cell: PickedCell, erase: boolean) => {
+      if (mode === "events") return selectAt(cell);
       if (draft === null) return;
 
       const at: Stroke = { base: draft, from: cell, erase };
@@ -159,7 +179,7 @@ export function App() {
       project.edit(next);
       setMessage(null);
     },
-    [draft, apply, project],
+    [mode, selectAt, draft, apply, project],
   );
 
   /**
@@ -172,7 +192,7 @@ export function App() {
   const onStrokeMove = useCallback(
     (cell: PickedCell) => {
       const at = stroke.current;
-      if (at === null || draft === null) return;
+      if (at === null || draft === null || mode === "events") return;
       // O balde ja pintou a regiao inteira no primeiro clique.
       if (tool === "fill" && mode !== "terrain") return;
 
@@ -224,6 +244,17 @@ export function App() {
   useEffect(() => {
     void redraw();
   }, [project.revision, redraw]);
+
+  /**
+   * As marcas de evento acompanham o modo.
+   *
+   * Roda tambem depois de cada redesenho, porque redesenhar refaz as malhas e
+   * as marcas nascem escondidas.
+   */
+  useEffect(() => {
+    viewport.current?.setEventMarks(mode === "events");
+    viewport.current?.selectEvent(mode === "events" ? event : null);
+  }, [mode, event, project.revision, state.map]);
 
   useEffect(() => {
     function onKey(event: KeyboardEvent): void {
@@ -298,7 +329,9 @@ export function App() {
         />
 
         <ToolBar
-          mode={mode === "terrain" ? "terrain" : "draw"}
+          mode={
+            mode === "terrain" ? "terrain" : mode === "events" ? "events" : "draw"
+          }
           tool={mode === "terrain" ? "pencil" : tool}
           onTool={setTool}
           brush={brush}
@@ -328,6 +361,7 @@ export function App() {
                     viewport.current?.setMode(option);
                   }}
                   aria-pressed={option === view}
+                  data-view={option}
                   className={`rounded px-2.5 py-1 text-[10.5px] font-medium tracking-wide transition-colors ${
                     option === view
                       ? "bg-brand/20 text-brand"
@@ -356,7 +390,19 @@ export function App() {
             />
           </main>
 
-          <TilePanel map={state.map} stamp={stamp} onSelect={setStamp} />
+          {mode === "events" ? (
+            <EventPanel
+              map={state.map}
+              selected={event}
+              onSelect={(id) => {
+                setEvent(id);
+                viewport.current?.selectEvent(id);
+              }}
+              onSoon={soon}
+            />
+          ) : (
+            <TilePanel map={state.map} stamp={stamp} onSelect={setStamp} />
+          )}
         </div>
 
         <StatusBar
@@ -367,7 +413,9 @@ export function App() {
             message ??
             (mode === "draw"
               ? `layer ${layer + 1} · ${tool} · ${brushLabel} · drag paints · shift erases`
-              : null)
+              : mode === "events"
+                ? `${state.map?.events.length ?? 0} events · click one to inspect · editing comes later`
+                : null)
           }
           onSoon={soon}
         />
