@@ -1,0 +1,1099 @@
+diff --git a/binding/binding-mri.cpp b/binding/binding-mri.cpp
+index 3c54842..8e794a7 100644
+--- a/binding/binding-mri.cpp
++++ b/binding/binding-mri.cpp
+@@ -94,6 +94,7 @@ void tilemapVXBindingInit();
+ void inputBindingInit();
+ void audioBindingInit();
+ void graphicsBindingInit();
++void prism3DBindingInit();
+ 
+ void fileIntBindingInit();
+ 
+@@ -177,6 +178,7 @@ static void mriBindingInit() {
+     inputBindingInit();
+     audioBindingInit();
+     graphicsBindingInit();
++    prism3DBindingInit();
+     
+     fileIntBindingInit();
+     
+diff --git a/binding/meson.build b/binding/meson.build
+index 933a72d..f2785b0 100644
+--- a/binding/meson.build
++++ b/binding/meson.build
+@@ -33,7 +33,8 @@ binding_source = [files(
+     'filesystem-binding.cpp',
+     'windowvx-binding.cpp',
+     'tilemapvx-binding.cpp',
+-    'http-binding.cpp'
++    'http-binding.cpp',
++    'prism3d-binding.cpp'
+ )]
+ 
+ if steamworks == true
+diff --git a/binding/prism3d-binding.cpp b/binding/prism3d-binding.cpp
+new file mode 100644
+index 0000000..77b9ac4
+--- /dev/null
++++ b/binding/prism3d-binding.cpp
+@@ -0,0 +1,203 @@
++/*
++** prism3d-binding.cpp
++**
++** O modulo Ruby do passo 3D do Prism.
++**
++** API do marco 1, de proposito pequena: comecar, mover a camera, empilhar
++** caixas, limpar. Nada de arquivo de modelo, material, luz ou colisao. O
++** caminhao do editor entra como as caixas que ele ja descreve, e so.
++**
++**   Prism3D.start(z = 0)
++**   Prism3D.camera(ex, ey, ez, ax, ay, az, fov)
++**   Prism3D.add_box(x, y, z, larg, alt, prof, yaw, r, g, b)
++**   Prism3D.clear
++**   Prism3D.z / Prism3D.z=
++**   Prism3D.visible / Prism3D.visible=
++**   Prism3D.stop
++**
++** O elemento vive enquanto o jogo vive. Ele entra na cena da tela, que o
++** Graphics ja expoe por getScreen(), entao nada aqui precisa de estado global
++** novo no motor.
++*/
++
++#include "binding-util.h"
++#include "graphics.h"
++#include "prism3d.h"
++#include "sharedstate.h"
++
++static Prism3D::Element *element = 0;
++
++static Prism3D::Element *needElement() {
++    if (!element)
++        rb_raise(rb_eRuntimeError, "Prism3D.start precisa vir antes");
++
++    return element;
++}
++
++RB_METHOD(prism3DStart) {
++    RB_UNUSED_PARAM;
++
++    int z = 0;
++    rb_get_args(argc, argv, "|i", &z RB_ARG_END);
++
++    GFX_LOCK;
++    if (!element) {
++        element = new Prism3D::Element(*shState->graphics().getScreen(), z);
++        if (!element->renderer().init()) {
++            delete element;
++            element = 0;
++            GFX_UNLOCK;
++            rb_raise(rb_eRuntimeError, "Prism3D: o renderizador nao subiu");
++        }
++    } else {
++        element->setZ(z);
++    }
++    GFX_UNLOCK;
++
++    return Qnil;
++}
++
++RB_METHOD(prism3DStop) {
++    RB_UNUSED_PARAM;
++
++    GFX_LOCK;
++    delete element;
++    element = 0;
++    GFX_UNLOCK;
++
++    return Qnil;
++}
++
++RB_METHOD(prism3DCamera) {
++    RB_UNUSED_PARAM;
++
++    double ex, ey, ez, ax, ay, az, fov = 45.0;
++    rb_get_args(argc, argv, "ffffff|f", &ex, &ey, &ez, &ax, &ay, &az, &fov RB_ARG_END);
++
++    GFX_LOCK;
++    needElement()->renderer().setCamera(Prism3D::Vec3((float)ex, (float)ey, (float)ez),
++                                        Prism3D::Vec3((float)ax, (float)ay, (float)az),
++                                        (float)fov);
++    GFX_UNLOCK;
++
++    return Qnil;
++}
++
++RB_METHOD(prism3DAddBox) {
++    RB_UNUSED_PARAM;
++
++    double x, y, z, w, h, d;
++    double yaw = 0.0, red = 1.0, green = 1.0, blue = 1.0;
++    rb_get_args(argc, argv, "ffffff|ffff",
++                &x, &y, &z, &w, &h, &d, &yaw, &red, &green, &blue RB_ARG_END);
++
++    Prism3D::Box box;
++    box.at = Prism3D::Vec3((float)x, (float)y, (float)z);
++    box.size = Prism3D::Vec3((float)w, (float)h, (float)d);
++    box.yaw = (float)yaw;
++    box.red = (float)red;
++    box.green = (float)green;
++    box.blue = (float)blue;
++
++    GFX_LOCK;
++    needElement()->renderer().add(box);
++    GFX_UNLOCK;
++
++    return Qnil;
++}
++
++RB_METHOD(prism3DClear) {
++    RB_UNUSED_PARAM;
++
++    GFX_LOCK;
++    needElement()->renderer().clear();
++    GFX_UNLOCK;
++
++    return Qnil;
++}
++
++RB_METHOD(prism3DCount) {
++    RB_UNUSED_PARAM;
++
++    GFX_LOCK;
++    const size_t count = needElement()->renderer().count();
++    GFX_UNLOCK;
++
++    return rb_fix_new((long)count);
++}
++
++RB_METHOD(prism3DGetZ) {
++    RB_UNUSED_PARAM;
++
++    GFX_LOCK;
++    const int z = needElement()->getZ();
++    GFX_UNLOCK;
++
++    return rb_fix_new(z);
++}
++
++RB_METHOD(prism3DSetZ) {
++    RB_UNUSED_PARAM;
++
++    int z;
++    rb_get_args(argc, argv, "i", &z RB_ARG_END);
++
++    GFX_LOCK;
++    needElement()->setZ(z);
++    GFX_UNLOCK;
++
++    return rb_fix_new(z);
++}
++
++RB_METHOD(prism3DGetVisible) {
++    RB_UNUSED_PARAM;
++
++    GFX_LOCK;
++    const bool visible = needElement()->getVisible();
++    GFX_UNLOCK;
++
++    return rb_bool_new(visible);
++}
++
++RB_METHOD(prism3DSetVisible) {
++    RB_UNUSED_PARAM;
++
++    bool visible;
++    rb_get_args(argc, argv, "b", &visible RB_ARG_END);
++
++    GFX_LOCK;
++    needElement()->setVisible(visible);
++    GFX_UNLOCK;
++
++    return rb_bool_new(visible);
++}
++
++/* So para o ensaio: desligar a profundidade prova que e ela quem ordena. */
++RB_METHOD(prism3DSetDepth) {
++    RB_UNUSED_PARAM;
++
++    bool on;
++    rb_get_args(argc, argv, "b", &on RB_ARG_END);
++
++    GFX_LOCK;
++    needElement()->renderer().depthEnabled = on;
++    GFX_UNLOCK;
++
++    return rb_bool_new(on);
++}
++
++void prism3DBindingInit() {
++    VALUE module = rb_define_module("Prism3D");
++
++    _rb_define_module_function(module, "start", prism3DStart);
++    _rb_define_module_function(module, "stop", prism3DStop);
++    _rb_define_module_function(module, "camera", prism3DCamera);
++    _rb_define_module_function(module, "add_box", prism3DAddBox);
++    _rb_define_module_function(module, "clear", prism3DClear);
++    _rb_define_module_function(module, "count", prism3DCount);
++    _rb_define_module_function(module, "z", prism3DGetZ);
++    _rb_define_module_function(module, "z=", prism3DSetZ);
++    _rb_define_module_function(module, "visible", prism3DGetVisible);
++    _rb_define_module_function(module, "visible=", prism3DSetVisible);
++    _rb_define_module_function(module, "depth_test=", prism3DSetDepth);
++}
+diff --git a/src/display/gl/gl-fun.h b/src/display/gl/gl-fun.h
+index 634da66..929c2e1 100644
+--- a/src/display/gl/gl-fun.h
++++ b/src/display/gl/gl-fun.h
+@@ -38,6 +38,15 @@ typedef void (APIENTRYP _PFNGLGETINTEGERVPROC) (GLenum pname, GLint *params);
+ typedef void (APIENTRYP _PFNGLPIXELSTOREIPROC) (GLenum pname, GLint param);
+ typedef void (APIENTRYP _PFNGLREADPIXELSPROC) (GLint x, GLint y, GLsizei width, GLsizei height, GLenum format, GLenum type, GLvoid *pixels);
+ typedef void (APIENTRYP _PFNGLENABLEPROC) (GLenum cap);
++/* Prism3D: profundidade, face traseira e consulta de estado. O motor e 2D e
++   nunca precisou destas; o passo 3D precisa. */
++typedef GLboolean (APIENTRYP _PFNGLISENABLEDPROC) (GLenum cap);
++typedef void (APIENTRYP _PFNGLGETBOOLEANVPROC) (GLenum pname, GLboolean *params);
++typedef void (APIENTRYP _PFNGLDEPTHFUNCPROC) (GLenum func);
++typedef void (APIENTRYP _PFNGLDEPTHMASKPROC) (GLboolean flag);
++typedef void (APIENTRYP _PFNGLCULLFACEPROC) (GLenum mode);
++typedef void (APIENTRYP _PFNGLFRONTFACEPROC) (GLenum mode);
++typedef void (APIENTRYP _PFNGLUNIFORM3FPROC) (GLint location, GLfloat v0, GLfloat v1, GLfloat v2);
+ typedef void (APIENTRYP _PFNGLDISABLEPROC) (GLenum cap);
+ typedef void (APIENTRYP _PFNGLSCISSORPROC) (GLint x, GLint y, GLsizei width, GLsizei height);
+ typedef void (APIENTRYP _PFNGLVIEWPORTPROC) (GLint x, GLint y, GLsizei width, GLsizei height);
+@@ -106,8 +115,35 @@ typedef void (APIENTRYP _PFNGLGENFRAMEBUFFERSPROC) (GLsizei n, GLuint* framebuff
+ typedef void (APIENTRYP _PFNGLDELETEFRAMEBUFFERSPROC) (GLsizei n, const GLuint* framebuffers);
+ typedef void (APIENTRYP _PFNGLBINDFRAMEBUFFERPROC) (GLenum target, GLuint framebuffer);
+ typedef void (APIENTRYP _PFNGLFRAMEBUFFERTEXTURE2DPROC) (GLenum target, GLenum attachment, GLenum textarget, GLuint texture, GLint level);
++/* Prism3D: renderbuffer de profundidade anexado aos alvos de tela. */
++typedef void (APIENTRYP _PFNGLGENRENDERBUFFERSPROC) (GLsizei n, GLuint *renderbuffers);
++typedef void (APIENTRYP _PFNGLDELETERENDERBUFFERSPROC) (GLsizei n, const GLuint *renderbuffers);
++typedef void (APIENTRYP _PFNGLBINDRENDERBUFFERPROC) (GLenum target, GLuint renderbuffer);
++typedef void (APIENTRYP _PFNGLRENDERBUFFERSTORAGEPROC) (GLenum target, GLenum internalformat, GLsizei width, GLsizei height);
++typedef void (APIENTRYP _PFNGLFRAMEBUFFERRENDERBUFFERPROC) (GLenum target, GLenum attachment, GLenum renderbuffertarget, GLuint renderbuffer);
++typedef GLenum (APIENTRYP _PFNGLCHECKFRAMEBUFFERSTATUSPROC) (GLenum target);
+ typedef void (APIENTRYP _PFNGLBLITFRAMEBUFFERPROC) (GLint srcX0, GLint srcY0, GLint srcX1, GLint srcY1, GLint dstX0, GLint dstY0, GLint dstX1, GLint dstY1, GLbitfield mask, GLenum filter);
+ 
++/*
++** Constantes de renderbuffer e profundidade.
++**
++** O SDL_opengl.h de sistemas antigos as vezes para no GL 1.x e nao traz
++** estas, entao definimos na mao quando faltam, no mesmo padrao que o arquivo
++** ja usa para GL_NUM_EXTENSIONS e companhia.
++*/
++#ifndef GL_RENDERBUFFER
++#define GL_RENDERBUFFER 0x8D41
++#endif
++#ifndef GL_DEPTH_ATTACHMENT
++#define GL_DEPTH_ATTACHMENT 0x8D00
++#endif
++#ifndef GL_DEPTH_COMPONENT16
++#define GL_DEPTH_COMPONENT16 0x81A5
++#endif
++#ifndef GL_FRAMEBUFFER_COMPLETE
++#define GL_FRAMEBUFFER_COMPLETE 0x8CD5
++#endif
++
+ /* Vertex array object */
+ typedef void (APIENTRYP _PFNGLGENVERTEXARRAYSPROC) (GLsizei n, GLuint* arrays);
+ typedef void (APIENTRYP _PFNGLDELETEVERTEXARRAYSPROC) (GLsizei n, const GLuint* arrays);
+@@ -136,6 +172,12 @@ typedef void (APIENTRYP _PFNGLRELEASESHADERCOMPILERPROC) (void);
+ 	GL_FUN(ReadPixels, _PFNGLREADPIXELSPROC) \
+ 	GL_FUN(Enable, _PFNGLENABLEPROC) \
+ 	GL_FUN(Disable, _PFNGLDISABLEPROC) \
++	GL_FUN(IsEnabled, _PFNGLISENABLEDPROC) \
++	GL_FUN(GetBooleanv, _PFNGLGETBOOLEANVPROC) \
++	GL_FUN(DepthFunc, _PFNGLDEPTHFUNCPROC) \
++	GL_FUN(DepthMask, _PFNGLDEPTHMASKPROC) \
++	GL_FUN(CullFace, _PFNGLCULLFACEPROC) \
++	GL_FUN(FrontFace, _PFNGLFRONTFACEPROC) \
+ 	GL_FUN(Scissor, _PFNGLSCISSORPROC) \
+ 	GL_FUN(Viewport, _PFNGLVIEWPORTPROC) \
+ 	GL_FUN(BlendFunc, _PFNGLBLENDFUNCPROC) \
+@@ -177,6 +219,7 @@ typedef void (APIENTRYP _PFNGLRELEASESHADERCOMPILERPROC) (void);
+ 	GL_FUN(GetUniformLocation, _PFNGLGETUNIFORMLOCATIONPROC) \
+ 	GL_FUN(Uniform1f, _PFNGLUNIFORM1FPROC) \
+ 	GL_FUN(Uniform2f, _PFNGLUNIFORM2FPROC) \
++	GL_FUN(Uniform3f, _PFNGLUNIFORM3FPROC) \
+ 	GL_FUN(Uniform4f, _PFNGLUNIFORM4FPROC) \
+ 	GL_FUN(Uniform1i, _PFNGLUNIFORM1IPROC) \
+ 	GL_FUN(Uniform1iv, _PFNGLUNIFORM1IVPROC) \
+@@ -195,7 +238,13 @@ typedef void (APIENTRYP _PFNGLRELEASESHADERCOMPILERPROC) (void);
+ 	GL_FUN(GenFramebuffers, _PFNGLGENFRAMEBUFFERSPROC) \
+ 	GL_FUN(DeleteFramebuffers, _PFNGLDELETEFRAMEBUFFERSPROC) \
+ 	GL_FUN(BindFramebuffer, _PFNGLBINDFRAMEBUFFERPROC) \
+-	GL_FUN(FramebufferTexture2D, _PFNGLFRAMEBUFFERTEXTURE2DPROC)
++	GL_FUN(FramebufferTexture2D, _PFNGLFRAMEBUFFERTEXTURE2DPROC) \
++	GL_FUN(GenRenderbuffers, _PFNGLGENRENDERBUFFERSPROC) \
++	GL_FUN(DeleteRenderbuffers, _PFNGLDELETERENDERBUFFERSPROC) \
++	GL_FUN(BindRenderbuffer, _PFNGLBINDRENDERBUFFERPROC) \
++	GL_FUN(RenderbufferStorage, _PFNGLRENDERBUFFERSTORAGEPROC) \
++	GL_FUN(FramebufferRenderbuffer, _PFNGLFRAMEBUFFERRENDERBUFFERPROC) \
++	GL_FUN(CheckFramebufferStatus, _PFNGLCHECKFRAMEBUFFERSTATUSPROC)
+ 
+ #define GL_FBO_BLIT_FUN \
+ 	GL_FUN(BlitFramebuffer, _PFNGLBLITFRAMEBUFFERPROC)
+diff --git a/src/display/gl/gl-util.h b/src/display/gl/gl-util.h
+index 099edb9..ecb7825 100644
+--- a/src/display/gl/gl-util.h
++++ b/src/display/gl/gl-util.h
+@@ -112,6 +112,49 @@ namespace TEX
+ 	}
+ }
+ 
++/*
++** Renderbuffer, usado so pelo passo 3D do Prism.
++**
++** O motor e 2D e nunca precisou de profundidade: os alvos de tela sao criados
++** so com cor. O passo 3D precisa de um anexo de profundidade no alvo em que
++** desenha, senao ligar GL_DEPTH_TEST nao da erro nenhum e simplesmente nao
++** faz nada.
++*/
++namespace RBO
++{
++	DEF_GL_ID
++
++	inline ID gen()
++	{
++		ID id;
++		gl.GenRenderbuffers(1, &id.gl);
++
++		return id;
++	}
++
++	static inline void del(ID id)
++	{
++		gl.DeleteRenderbuffers(1, &id.gl);
++	}
++
++	static inline void bind(ID id)
++	{
++		gl.BindRenderbuffer(GL_RENDERBUFFER, id.gl);
++	}
++
++	static inline void unbind()
++	{
++		bind(ID(0));
++	}
++
++	/* 16 bits, que e o unico formato de profundidade que o GLES 2 garante.
++	   Desktop aceita o mesmo, entao nao ha ramo por plataforma. */
++	static inline void allocDepth(int width, int height)
++	{
++		gl.RenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT16, width, height);
++	}
++}
++
+ /* Framebuffer Object */
+ namespace FBO
+ {
+@@ -152,6 +195,13 @@ namespace FBO
+ 	{
+ 		gl.Clear(GL_COLOR_BUFFER_BIT);
+ 	}
++
++	/* Prism3D: liga o renderbuffer de profundidade ao FBO ligado agora. */
++	static inline void setDepthTarget(RBO::ID target)
++	{
++		gl.FramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT,
++		                           GL_RENDERBUFFER, target.gl);
++	}
+ }
+ 
+ template<GLenum target>
+diff --git a/src/display/gl/prism3d-math.h b/src/display/gl/prism3d-math.h
+new file mode 100644
+index 0000000..5fc8c99
+--- /dev/null
++++ b/src/display/gl/prism3d-math.h
+@@ -0,0 +1,157 @@
++/*
++** prism3d-math.h
++**
++** Matriz 4x4 e vetor, o minimo para camera e transformacao.
++**
++** O mkxp-z nao tem tipo de matriz: ele e um compositor 2D e nunca precisou de
++** uma. Procurei em src/etc/etc-internal.h e so existem Vec2, Vec4, Vec2i e
++** retangulos. Entao a matriz vem daqui, e este arquivo e escrito para entrar
++** no fork sem depender de nada: nem glm, nem Eigen, nem cabecalho de GL.
++**
++** Convencao: coluna-maior, como o OpenGL espera em glUniformMatrix4fv com
++** transpose = GL_FALSE. O elemento (linha i, coluna j) fica em m[j * 4 + i].
++*/
++
++#ifndef PRISM3D_MATH_H
++#define PRISM3D_MATH_H
++
++#include <cmath>
++
++namespace Prism3D {
++
++struct Vec3 {
++    float x, y, z;
++
++    Vec3() : x(0), y(0), z(0) {}
++    Vec3(float x, float y, float z) : x(x), y(y), z(z) {}
++
++    Vec3 operator-(const Vec3 &o) const { return Vec3(x - o.x, y - o.y, z - o.z); }
++    Vec3 operator+(const Vec3 &o) const { return Vec3(x + o.x, y + o.y, z + o.z); }
++    Vec3 operator*(float s) const { return Vec3(x * s, y * s, z * s); }
++};
++
++inline Vec3 cross(const Vec3 &a, const Vec3 &b) {
++    return Vec3(a.y * b.z - a.z * b.y,
++                a.z * b.x - a.x * b.z,
++                a.x * b.y - a.y * b.x);
++}
++
++inline float dot(const Vec3 &a, const Vec3 &b) {
++    return a.x * b.x + a.y * b.y + a.z * b.z;
++}
++
++inline Vec3 normalize(const Vec3 &v) {
++    const float length = std::sqrt(dot(v, v));
++    return length > 0 ? v * (1.0f / length) : v;
++}
++
++struct Mat4 {
++    float m[16];
++
++    static Mat4 identity() {
++        Mat4 out = {};
++        out.m[0] = out.m[5] = out.m[10] = out.m[15] = 1.0f;
++        return out;
++    }
++
++    static Mat4 translation(const Vec3 &at) {
++        Mat4 out = identity();
++        out.m[12] = at.x;
++        out.m[13] = at.y;
++        out.m[14] = at.z;
++        return out;
++    }
++
++    static Mat4 scale(const Vec3 &by) {
++        Mat4 out = identity();
++        out.m[0] = by.x;
++        out.m[5] = by.y;
++        out.m[10] = by.z;
++        return out;
++    }
++
++    /** Giro em volta do eixo vertical, em radianos. */
++    static Mat4 rotationY(float radians) {
++        Mat4 out = identity();
++        const float c = std::cos(radians);
++        const float s = std::sin(radians);
++        out.m[0] = c;
++        out.m[2] = -s;
++        out.m[8] = s;
++        out.m[10] = c;
++        return out;
++    }
++
++    static Mat4 rotationX(float radians) {
++        Mat4 out = identity();
++        const float c = std::cos(radians);
++        const float s = std::sin(radians);
++        out.m[5] = c;
++        out.m[6] = s;
++        out.m[9] = -s;
++        out.m[10] = c;
++        return out;
++    }
++
++    /**
++     * Projecao em perspectiva, no intervalo de profundidade de -1 a 1.
++     *
++     * E o intervalo do OpenGL de desktop e do GLES, que e onde o mkxp-z roda.
++     */
++    static Mat4 perspective(float fovYRadians, float aspect, float near, float far) {
++        Mat4 out = {};
++        const float f = 1.0f / std::tan(fovYRadians / 2.0f);
++        out.m[0] = f / aspect;
++        out.m[5] = f;
++        out.m[10] = (far + near) / (near - far);
++        out.m[11] = -1.0f;
++        out.m[14] = (2.0f * far * near) / (near - far);
++        return out;
++    }
++
++    static Mat4 orthographic(float left, float right, float bottom, float top,
++                             float near, float far) {
++        Mat4 out = identity();
++        out.m[0] = 2.0f / (right - left);
++        out.m[5] = 2.0f / (top - bottom);
++        out.m[10] = -2.0f / (far - near);
++        out.m[12] = -(right + left) / (right - left);
++        out.m[13] = -(top + bottom) / (top - bottom);
++        out.m[14] = -(far + near) / (far - near);
++        return out;
++    }
++
++    /** Camera olhando de `eye` para `target`, com `up` definindo a inclinacao. */
++    static Mat4 lookAt(const Vec3 &eye, const Vec3 &target, const Vec3 &up) {
++        const Vec3 forward = normalize(target - eye);
++        const Vec3 side = normalize(cross(forward, up));
++        const Vec3 realUp = cross(side, forward);
++
++        Mat4 out = identity();
++        out.m[0] = side.x;    out.m[4] = side.y;    out.m[8]  = side.z;
++        out.m[1] = realUp.x;  out.m[5] = realUp.y;  out.m[9]  = realUp.z;
++        out.m[2] = -forward.x; out.m[6] = -forward.y; out.m[10] = -forward.z;
++        out.m[12] = -dot(side, eye);
++        out.m[13] = -dot(realUp, eye);
++        out.m[14] = dot(forward, eye);
++        return out;
++    }
++};
++
++/** Produto de matrizes: aplica `b` e depois `a`, como o OpenGL espera. */
++inline Mat4 operator*(const Mat4 &a, const Mat4 &b) {
++    Mat4 out = {};
++    for (int column = 0; column < 4; ++column) {
++        for (int row = 0; row < 4; ++row) {
++            float sum = 0;
++            for (int k = 0; k < 4; ++k)
++                sum += a.m[k * 4 + row] * b.m[column * 4 + k];
++            out.m[column * 4 + row] = sum;
++        }
++    }
++    return out;
++}
++
++} // namespace Prism3D
++
++#endif // PRISM3D_MATH_H
+diff --git a/src/display/gl/prism3d.cpp b/src/display/gl/prism3d.cpp
+new file mode 100644
+index 0000000..000198c
+--- /dev/null
++++ b/src/display/gl/prism3d.cpp
+@@ -0,0 +1,317 @@
++/*
++** prism3d.cpp
++**
++** Implementacao do passo 3D. A logica e a mesma do prototipo em
++** tools/prism3d-prototype/ do repositorio do Prism, que foi escrito e provado
++** fora do motor justamente para nao pagar o custo de compilar o mkxp-z a cada
++** tentativa. A diferenca aqui: as chamadas de OpenGL passam pela tabela `gl`
++** do motor, e o estado que o motor cacheia em GLState vai por push/pop em vez
++** de na mao.
++*/
++
++#include "prism3d.h"
++
++#include <cstdio>
++#include <cstring>
++
++#include "gl-fun.h"
++#include "gl-util.h"
++#include "glstate.h"
++#include "graphics.h"
++#include "shader.h"
++#include "sharedstate.h"
++#include "vertex.h"
++
++namespace Prism3D {
++
++/*
++** Os dois shaders, embutidos.
++**
++** Embutidos e nao em shader/ porque os shaders do motor passam por um gerador
++** que transforma arquivo em array de bytes no build; entrar nele significaria
++** mexer em shader/meson.build e no gerador. Sao trinta linhas, e assim o patch
++** no build fica em duas linhas.
++**
++** A versao pedida e a 100 do GLSL ES, que e o minimo que roda tanto no OpenGL
++** de desktop quanto no GLES por ANGLE, que e o caminho do macOS com Apple
++** Silicon. Nada aqui usa recurso mais novo que isso.
++*/
++static const char *vertexSource = R"(
++attribute vec3 position;
++attribute vec3 normal;
++
++uniform mat4 model;
++uniform mat4 viewProjection;
++
++varying vec3 vNormal;
++
++void main() {
++    vNormal = mat3(model[0].xyz, model[1].xyz, model[2].xyz) * normal;
++    gl_Position = viewProjection * model * vec4(position, 1.0);
++}
++)";
++
++static const char *fragmentSource = R"(
++#ifdef GLSLES
++precision mediump float;
++#endif
++
++uniform vec3 color;
++varying vec3 vNormal;
++
++void main() {
++    /* Iluminacao de uma luz so, fixa. Serve para as faces se distinguirem:
++       sem isso o cubo vira uma silhueta chapada e ninguem consegue dizer se
++       ele girou. */
++    vec3 light = normalize(vec3(-0.4, 0.9, 0.55));
++    float lambert = max(dot(normalize(vNormal), light), 0.0);
++    gl_FragColor = vec4(color * (0.45 + 0.55 * lambert), 1.0);
++}
++)";
++
++static GLuint compile(GLenum type, const char *source) {
++    const GLuint shader = gl.CreateShader(type);
++
++    /* O mesmo define que o motor passa aos shaders dele, para o fragmento
++       saber se precisa declarar precisao. */
++    static const char glesDefine[] = "#define GLSLES\n";
++    const GLchar *parts[2];
++    GLint sizes[2];
++    size_t count = 0;
++
++    if (gl.glsles) {
++        parts[count] = glesDefine;
++        sizes[count] = sizeof(glesDefine) - 1;
++        ++count;
++    }
++    parts[count] = source;
++    sizes[count] = (GLint)std::strlen(source);
++    ++count;
++
++    gl.ShaderSource(shader, (GLsizei)count, parts, sizes);
++    gl.CompileShader(shader);
++
++    GLint ok = 0;
++    gl.GetShaderiv(shader, GL_COMPILE_STATUS, &ok);
++    if (!ok) {
++        char log[1024] = {};
++        gl.GetShaderInfoLog(shader, sizeof(log) - 1, 0, log);
++        std::fprintf(stderr, "Prism3D: shader nao compilou: %s\n", log);
++        gl.DeleteShader(shader);
++        return 0;
++    }
++    return shader;
++}
++
++Renderer::Renderer() {
++    /* O VAO so ganha conteudo em init(); ate la fica zerado, para fini() poder
++       ser chamado sem medo mesmo se init() nunca correu. */
++    vao.attr = 0;
++    vao.attrCount = 0;
++    vao.vertSize = 0;
++    vao.nativeVAO = 0;
++}
++Renderer::~Renderer() { fini(); }
++
++bool Renderer::init() {
++    if (program)
++        return true;
++
++    const GLuint vertex = compile(GL_VERTEX_SHADER, vertexSource);
++    const GLuint fragment = compile(GL_FRAGMENT_SHADER, fragmentSource);
++    if (!vertex || !fragment)
++        return false;
++
++    program = gl.CreateProgram();
++    gl.AttachShader(program, vertex);
++    gl.AttachShader(program, fragment);
++    /* Posicao e normal nos lugares que o motor ja usa para os atributos dele,
++       para nao haver dois mapas de atributo concorrendo. */
++    gl.BindAttribLocation(program, Shader::Position, "position");
++    gl.BindAttribLocation(program, Shader::TexCoord, "normal");
++    gl.LinkProgram(program);
++
++    GLint linked = 0;
++    gl.GetProgramiv(program, GL_LINK_STATUS, &linked);
++    if (!linked) {
++        char log[1024] = {};
++        gl.GetProgramInfoLog(program, sizeof(log) - 1, 0, log);
++        std::fprintf(stderr, "Prism3D: programa nao ligou: %s\n", log);
++        gl.DeleteProgram(program);
++        program = 0;
++        return false;
++    }
++    gl.DeleteShader(vertex);
++    gl.DeleteShader(fragment);
++
++    uniformModel = gl.GetUniformLocation(program, "model");
++    uniformViewProjection = gl.GetUniformLocation(program, "viewProjection");
++    uniformColor = gl.GetUniformLocation(program, "color");
++
++    /* O cubo: 24 vertices, quatro por face, porque cada face tem a propria
++       normal. Compartilhar os oito cantos daria normal media e o cubo sairia
++       com aparencia de bola mal feita. */
++    struct Vertex { float x, y, z, nx, ny, nz; };
++    const Vertex vertices[24] = {
++        /* frente (+z) */
++        {-0.5f, -0.5f,  0.5f,  0, 0, 1}, { 0.5f, -0.5f,  0.5f,  0, 0, 1},
++        { 0.5f,  0.5f,  0.5f,  0, 0, 1}, {-0.5f,  0.5f,  0.5f,  0, 0, 1},
++        /* tras (-z) */
++        { 0.5f, -0.5f, -0.5f,  0, 0, -1}, {-0.5f, -0.5f, -0.5f,  0, 0, -1},
++        {-0.5f,  0.5f, -0.5f,  0, 0, -1}, { 0.5f,  0.5f, -0.5f,  0, 0, -1},
++        /* direita (+x) */
++        { 0.5f, -0.5f,  0.5f,  1, 0, 0}, { 0.5f, -0.5f, -0.5f,  1, 0, 0},
++        { 0.5f,  0.5f, -0.5f,  1, 0, 0}, { 0.5f,  0.5f,  0.5f,  1, 0, 0},
++        /* esquerda (-x) */
++        {-0.5f, -0.5f, -0.5f, -1, 0, 0}, {-0.5f, -0.5f,  0.5f, -1, 0, 0},
++        {-0.5f,  0.5f,  0.5f, -1, 0, 0}, {-0.5f,  0.5f, -0.5f, -1, 0, 0},
++        /* topo (+y) */
++        {-0.5f,  0.5f,  0.5f,  0, 1, 0}, { 0.5f,  0.5f,  0.5f,  0, 1, 0},
++        { 0.5f,  0.5f, -0.5f,  0, 1, 0}, {-0.5f,  0.5f, -0.5f,  0, 1, 0},
++        /* base (-y) */
++        {-0.5f, -0.5f, -0.5f,  0, -1, 0}, { 0.5f, -0.5f, -0.5f,  0, -1, 0},
++        { 0.5f, -0.5f,  0.5f,  0, -1, 0}, {-0.5f, -0.5f,  0.5f,  0, -1, 0},
++    };
++
++    GLushort indices[36];
++    for (int face = 0; face < 6; ++face) {
++        const GLushort base = (GLushort)(face * 4);
++        const int at = face * 6;
++        indices[at + 0] = base;
++        indices[at + 1] = base + 1;
++        indices[at + 2] = base + 2;
++        indices[at + 3] = base;
++        indices[at + 4] = base + 2;
++        indices[at + 5] = base + 3;
++    }
++    indexCount = 36;
++
++    vbo = VBO::gen();
++    ibo = IBO::gen();
++
++    VBO::bind(vbo);
++    VBO::uploadData(sizeof(vertices), vertices);
++    IBO::bind(ibo);
++    IBO::uploadData(sizeof(indices), indices);
++    VBO::unbind();
++    IBO::unbind();
++
++    /* O VAO vai pelo GLMeta do motor, e nao na mao, porque nem toda maquina
++       tem VAO nativo: sem a extensao, o GLMeta cai para prender buffer e
++       ponteiro de atributo a cada desenho, e o codigo daqui nao muda. */
++    static const VertexAttribute attribs[] = {
++        { Shader::Position, 3, GL_FLOAT, (const GLvoid *)0 },
++        { Shader::TexCoord, 3, GL_FLOAT, (const GLvoid *)(sizeof(float) * 3) }
++    };
++    vao.attr = attribs;
++    vao.attrCount = 2;
++    vao.vertSize = sizeof(Vertex);
++    vao.vbo = vbo;
++    vao.ibo = ibo;
++    GLMeta::vaoInit(vao);
++
++    return true;
++}
++
++void Renderer::fini() {
++    if (!program)
++        return;
++
++    GLMeta::vaoFini(vao);
++    IBO::del(ibo);
++    VBO::del(vbo);
++    gl.DeleteProgram(program);
++    program = 0;
++}
++
++void Renderer::setCamera(const Vec3 &newEye, const Vec3 &newTarget, float fovDegrees) {
++    eye = newEye;
++    target = newTarget;
++    fov = fovDegrees;
++    view = Mat4::lookAt(eye, target, Vec3(0, 1, 0));
++}
++
++void Renderer::draw(int width, int height, bool clearDepth) {
++    if (!program || boxes.empty())
++        return;
++
++    /* Profundidade e face traseira o GLState do motor nao conhece, entao
++       salvamos na mao. Mistura e programa ele conhece, e vao por push/pop,
++       senao o cache dele ficaria mentindo sobre o estado real. */
++    const GLboolean hadDepthTest = gl.IsEnabled(GL_DEPTH_TEST);
++    const GLboolean hadCullFace = gl.IsEnabled(GL_CULL_FACE);
++    GLboolean hadDepthMask = GL_TRUE;
++    gl.GetBooleanv(GL_DEPTH_WRITEMASK, &hadDepthMask);
++
++    if (clearDepth) {
++        /* glClear respeita o teste de tesoura, e o ciclo de desenho do motor
++           deixa a tesoura ligada na viewport corrente. Sem desligar, a limpeza
++           sairia recortada. */
++        glState.scissorTest.pushSet(false);
++        gl.DepthMask(GL_TRUE);
++        gl.Clear(GL_DEPTH_BUFFER_BIT);
++        glState.scissorTest.pop();
++    }
++
++    if (depthEnabled) {
++        gl.Enable(GL_DEPTH_TEST);
++        gl.DepthFunc(GL_LESS);
++        gl.DepthMask(GL_TRUE);
++    } else {
++        gl.Disable(GL_DEPTH_TEST);
++    }
++
++    gl.Enable(GL_CULL_FACE);
++    gl.CullFace(GL_BACK);
++    gl.FrontFace(GL_CCW);
++    glState.blend.pushSet(false);
++
++    const float aspect = height > 0 ? (float)width / (float)height : 1.0f;
++    const Mat4 projection =
++        Mat4::perspective(fov * 3.14159265f / 180.0f, aspect, 0.1f, 200.0f);
++    const Mat4 viewProjection = projection * view;
++
++    glState.program.pushSet(program);
++    gl.UniformMatrix4fv(uniformViewProjection, 1, GL_FALSE, viewProjection.m);
++    GLMeta::vaoBind(vao);
++
++    for (size_t i = 0; i < boxes.size(); ++i) {
++        const Box &box = boxes[i];
++        const Mat4 model = Mat4::translation(box.at) *
++                           Mat4::rotationY(box.yaw) *
++                           Mat4::scale(box.size);
++        gl.UniformMatrix4fv(uniformModel, 1, GL_FALSE, model.m);
++        gl.Uniform3f(uniformColor, box.red, box.green, box.blue);
++        gl.DrawElements(GL_TRIANGLES, indexCount, GL_UNSIGNED_SHORT, 0);
++    }
++
++    /* Devolve tudo. A ordem importa: VAO por ultimo, senao um bind de buffer
++       do motor cairia dentro do nosso VAO. */
++    GLMeta::vaoUnbind(vao);
++    glState.program.pop();
++    glState.blend.pop();
++
++    if (!hadCullFace)
++        gl.Disable(GL_CULL_FACE);
++    gl.DepthMask(hadDepthMask);
++    if (!hadDepthTest)
++        gl.Disable(GL_DEPTH_TEST);
++}
++
++Element::Element(Scene &scene, int z)
++    : SceneElement(scene, z) {
++    const Scene::Geometry &geo = scene.getGeometry();
++    width = geo.rect.w;
++    height = geo.rect.h;
++}
++
++void Element::onGeometryChange(const Scene::Geometry &geo) {
++    width = geo.rect.w;
++    height = geo.rect.h;
++}
++
++void Element::draw() {
++    theRenderer.draw(width, height);
++}
++
++} // namespace Prism3D
+diff --git a/src/display/gl/prism3d.h b/src/display/gl/prism3d.h
+new file mode 100644
+index 0000000..4565b07
+--- /dev/null
++++ b/src/display/gl/prism3d.h
+@@ -0,0 +1,123 @@
++/*
++** prism3d.h
++**
++** O passo 3D do Prism, dentro do mkxp-z.
++**
++** Malha de verdade, camera de perspectiva e buffer de profundidade, desenhados
++** no mesmo contexto e no mesmo framebuffer que o compositor 2D do RGSS ja usa.
++** Nada aqui e sprite, bitmap ou pre-renderizacao.
++**
++** O renderizador entra na cena como um SceneElement, que e a lista ordenada por
++** z que o motor ja tem. Assim o 3D vale em todo caminho que compoe tela,
++** transicao e fade inclusive, e o Ruby escolhe se o mundo 3D fica abaixo dos
++** sprites, no meio ou acima.
++**
++** Duas regras que parecem exagero e nao sao:
++**
++** 1. `draw()` nao cria nem destroi nada. Tudo que e caro nasce em `init()`.
++** 2. `draw()` devolve o estado de OpenGL exatamente como encontrou. O motor 2D
++**    assume profundidade desligada, mistura ligada e nenhum VAO preso, e o
++**    cache de estado dele (GLState) nem sequer conhece profundidade.
++*/
++
++#ifndef PRISM3D_H
++#define PRISM3D_H
++
++#include <vector>
++
++#include "gl-meta.h"
++#include "prism3d-math.h"
++#include "scene.h"
++
++namespace Prism3D {
++
++/** Uma caixa no mundo. E o unico tipo de malha do primeiro marco. */
++struct Box {
++    Vec3 at;
++    Vec3 size;
++    /** Giro em volta do eixo vertical, em radianos. */
++    float yaw;
++    float red, green, blue;
++};
++
++class Renderer {
++public:
++    Renderer();
++    ~Renderer();
++
++    /** Compila o shader e sobe a malha do cubo. Uma vez, fora do desenho. */
++    bool init();
++    void fini();
++    bool ready() const { return program != 0; }
++
++    void clear() { boxes.clear(); }
++    void add(const Box &box) { boxes.push_back(box); }
++    size_t count() const { return boxes.size(); }
++    Box &at(size_t index) { return boxes[index]; }
++
++    void setCamera(const Vec3 &eye, const Vec3 &target, float fovDegrees);
++
++    /**
++     * Desenha, dentro do ciclo de desenho do motor.
++     *
++     * `width` e `height` sao os do alvo corrente, so para a proporcao da
++     * camera. O viewport em si nao e tocado: mexer nele durante o desenho e
++     * proibido pelo contrato de estado em scene.h.
++     *
++     * `clearDepth` diz se limpamos o buffer de profundidade antes. Isso
++     * acontece uma vez por quadro, e com o teste de tesoura desligado, porque
++     * glClear respeita tesoura e o ciclo de desenho deixa ela ligada.
++     */
++    void draw(int width, int height, bool clearDepth = true);
++
++    /** Desenhar sem profundidade prova, no teste, que ela e quem ordena. */
++    bool depthEnabled = true;
++
++private:
++    unsigned int program = 0;
++    GLMeta::VAO vao;
++    VBO::ID vbo;
++    IBO::ID ibo;
++    int indexCount = 0;
++
++    int uniformModel = -1;
++    int uniformViewProjection = -1;
++    int uniformColor = -1;
++
++    Mat4 view = Mat4::identity();
++    float fov = 45.0f;
++    Vec3 eye = Vec3(0, 3, 8);
++    Vec3 target = Vec3(0, 0, 0);
++
++    std::vector<Box> boxes;
++};
++
++/**
++ * O renderizador visto como elemento de cena.
++ *
++ * Fica na mesma lista de z dos sprites, entao o Ruby ordena 3D contra 2D pelo
++ * mecanismo que o RGSS ja tem. Entre objetos 3D a profundidade e real, por
++ * pixel; entre 3D e 2D a ordem e por z de elemento, porque os sprites do motor
++ * nao escrevem profundidade. E o mesmo limite que o MV3D tem.
++ */
++class Element : public SceneElement {
++public:
++    Element(Scene &scene, int z);
++
++    Renderer &renderer() { return theRenderer; }
++
++    /* Nao ha nada preguicoso para resolver antes de ler propriedade daqui. */
++    void aboutToAccess() const override {}
++
++protected:
++    void draw() override;
++    void onGeometryChange(const Scene::Geometry &geo) override;
++
++private:
++    Renderer theRenderer;
++    int width = 0, height = 0;
++};
++
++} // namespace Prism3D
++
++#endif // PRISM3D_H
+diff --git a/src/display/graphics.cpp b/src/display/graphics.cpp
+index 7ca41c4..2856151 100644
+--- a/src/display/graphics.cpp
++++ b/src/display/graphics.cpp
+@@ -440,6 +440,16 @@ struct MovieOpenHandler : FileSystem::OpenHandler
+ 
+ struct PingPong {
+     TEXFBO rt[2];
++    /*
++     * Profundidade nos DOIS alvos, e nao so no corrente.
++     *
++     * O alvo ligado troca no meio do quadro: requestViewportRender chama
++     * swapRender quando uma viewport tem tom de cinza. Anexar profundidade a
++     * um so faria o 3D funcionar na maioria dos mapas e parar de ocluir, sem
++     * erro nenhum, justamente quando esse efeito acontecesse antes do passo
++     * 3D. Dois renderbuffers de 16 bits na resolucao da tela custam pouco.
++     */
++    RBO::ID depth[2];
+     uint8_t srcInd, dstInd;
+     int screenW, screenH;
+     
+@@ -449,14 +459,28 @@ struct PingPong {
+             TEXFBO::init(rt[i]);
+             TEXFBO::allocEmpty(rt[i], screenW, screenH);
+             TEXFBO::linkFBO(rt[i]);
++            depth[i] = RBO::gen();
++            allocDepth(i, screenW, screenH);
+             gl.ClearColor(0, 0, 0, 1);
+             FBO::clear();
+         }
+     }
+     
+     ~PingPong() {
+-        for (int i = 0; i < 2; ++i)
++        for (int i = 0; i < 2; ++i) {
+             TEXFBO::fini(rt[i]);
++            RBO::del(depth[i]);
++        }
++    }
++    
++    /* Dimensiona o renderbuffer e o liga ao FBO daquele alvo. */
++    void allocDepth(int i, int width, int height) {
++        RBO::bind(depth[i]);
++        RBO::allocDepth(width, height);
++        RBO::unbind();
++        
++        FBO::bind(rt[i].fbo);
++        FBO::setDepthTarget(depth[i]);
+     }
+     
+     TEXFBO &backBuffer() { return rt[srcInd]; }
+@@ -468,8 +492,16 @@ struct PingPong {
+         screenW = width;
+         screenH = height;
+         
+-        for (int i = 0; i < 2; ++i)
++        for (int i = 0; i < 2; ++i) {
+             TEXFBO::allocEmpty(rt[i], width, height);
++            /* A profundidade tem que acompanhar: renderbuffer com tamanho
++               diferente do anexo de cor deixa o FBO incompleto. */
++            allocDepth(i, width, height);
++        }
++
++        /* allocDepth deixa o FBO do ultimo alvo ligado; devolve o de
++           destino, que e o que o resto do codigo espera encontrar. */
++        bind();
+     }
+     
+     void startRender() { bind(); }
+diff --git a/src/meson.build b/src/meson.build
+index 4ce97ae..c7720a8 100755
+--- a/src/meson.build
++++ b/src/meson.build
+@@ -152,6 +152,7 @@ main_source = files(
+     'display/gl/gl-debug.cpp',
+     'display/gl/gl-fun.cpp',
+     'display/gl/gl-meta.cpp',
++    'display/gl/prism3d.cpp',
+     'display/gl/glstate.cpp',
+     'display/gl/scene.cpp',
+     'display/gl/shader.cpp',

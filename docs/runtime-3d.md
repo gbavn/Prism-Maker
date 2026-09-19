@@ -29,9 +29,15 @@ Feito e no `main`:
   profundidade, o resultado sai certo mesmo assim; sem ela, o cubo de longe
   pinta por cima. Ver o README do protótipo.
 
+- **o patch no mkxp-z, escrito**, em `tools/mkxp-z-patch/prism3d.patch`, com o
+  README de aplicar, compilar e testar ao lado dele. Base:
+  `826929eeb3ebc4b887c011604919217a790770f4`. Quatro arquivos novos e seis
+  alterados, todos com pouca coisa. `prism3d.cpp` e `prism3d-binding.cpp`
+  passam em `g++ -fsyntax-only` contra os cabeçalhos reais do motor, do SDL2 e
+  do Ruby, sem aviso.
+
 Não feito, e é o próximo passo:
 
-- o patch no mkxp-z;
 - o fork no GitHub e o build pela CI deles;
 - rodar dentro do jogo.
 
@@ -207,6 +213,12 @@ participarem do buffer de profundidade, que é um projeto à parte.
 
 ## 4. O patch mínimo
 
+Esta seção é o plano. O patch escrito saiu um pouco menor: os shaders ficaram
+embutidos em `prism3d.cpp` em vez de virarem arquivos em `shader/`, o elemento
+de cena ficou no mesmo par de arquivos do renderizador, e `sharedstate` não
+precisou mudar porque `Graphics::getScreen()` já devolve a `Scene` da tela. O
+diff real e o porquê de cada desvio estão em `tools/mkxp-z-patch/`.
+
 ### Arquivos novos (6)
 
 | Arquivo | Conteúdo |
@@ -270,7 +282,9 @@ chamadas. Sem inventar formato de arquivo antes da hora.
 1. **Fork.** Forkar `mkxp-z/mkxp-z` na conta do usuário. Decisão pendente: o
    usuário forka em dois cliques, ou o Claude cria pelo acesso do GitHub.
 2. **Branch** `prism3d` no fork.
-3. **Escrever o patch** da seção 4. Estimativa: 400 a 600 linhas somando tudo.
+3. **Aplicar o patch**, que já está escrito: `tools/mkxp-z-patch/prism3d.patch`.
+   O README ao lado tem os comandos e o que mudou em relação ao plano da
+   seção 4.
 4. **Compilar.** Não compilar localmente: o `linux/Makefile` deles constrói as
    dependências a partir do fonte, Ruby incluso, o que leva dezenas de minutos
    e alguns gigabytes, e o contêiner tem cota fixa de disco. Usar a CI:

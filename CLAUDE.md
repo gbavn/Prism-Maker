@@ -228,7 +228,10 @@ de continuidade: traz o mapa do runtime com arquivo e linha, o patch mínimo
 arquivo por arquivo, a API Ruby do primeiro marco, o passo a passo do fork e
 do build pela CI, e uma tabela de diagnóstico. O protótipo do renderizador,
 já funcionando, vive em `tools/prism3d-prototype/` e não faz parte do build do
-editor.
+editor. O patch do motor já está escrito, em `tools/mkxp-z-patch/`: o diff
+contra um commit fixo do mkxp-z, mais o README de aplicar, compilar pela CI
+deles e testar. O fonte do mkxp-z não entra aqui, porque ele é GPL e
+distribuir binário obriga a publicar o fork.
 
 Resumo dos fatos apurados no fonte, com o detalhe no documento:
 
