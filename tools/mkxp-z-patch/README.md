@@ -26,9 +26,23 @@ repositório à parte e este arquivo é a receita.
 git clone https://github.com/mkxp-z/mkxp-z.git
 cd mkxp-z
 git checkout 826929eeb3ebc4b887c011604919217a790770f4
-git checkout -b prism3d
+git checkout -b autobuild
 git apply /caminho/para/tools/mkxp-z-patch/prism3d.patch
 ```
+
+**O ramo chama `autobuild`, e não `prism3d`, de propósito.** O
+`.github/workflows/autobuild.yml` deles dispara em push só nos ramos `dev` e
+`autobuild`. Num ramo com outro nome a CI não roda, e o erro é silencioso: não
+aparece build nenhum e parece que o push falhou. A alternativa é o
+`workflow_dispatch`, que também está ligado e roda em qualquer ramo, mas aí é
+preciso acionar na mão pela aba Actions.
+
+Duas coisas do fork que custam tempo se ninguém avisar:
+
+- **num fork, a aba Actions vem desligada.** Abrir a aba e confirmar que sim,
+  os workflows devem rodar, antes de esperar build;
+- o job de Windows constrói todas as dependências do zero na primeira vez, com
+  cache para as próximas. A primeira rodada é longa.
 
 ## O que ele muda
 
