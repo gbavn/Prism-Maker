@@ -15,37 +15,130 @@ serve para outra coisa, e não substitui malha.
 
 ## 1. Onde paramos
 
-Feito e no `main`:
+**O marco 1 rodou.** Dois cubos de malha de verdade, desenhados por OpenGL
+dentro do Pokémon Essentials v21.1, no mesmo quadro que o mapa 2D e a caixa de
+mensagem. Três dos quatro critérios estão provados:
 
-- investigação completa do runtime (este documento);
-- protótipo do renderizador funcionando, em `tools/prism3d-prototype/`:
-  malha real com VAO, VBO e EBO, shader próprio, câmera com `lookAt`,
-  projeção em perspectiva e buffer de profundidade. Compila limpo com
-  `-Wall -Wextra` e roda sem tela com `xvfb-run`;
-- prova de que não é imagem: três giros mostram faces mudando de proporção e a
-  lateral aparecendo, e um quarto quadro repete um giro com o teste de
-  profundidade desligado. Nos dois casos a ordem de desenho é
-  **deliberadamente errada** (o cubo de perto entra primeiro). Com
-  profundidade, o resultado sai certo mesmo assim; sem ela, o cubo de longe
-  pinta por cima. Ver o README do protótipo.
+- o Essentials abre e funciona como antes;
+- os dois cubos aparecem com **oclusão correta por pixel**. O teste é a ordem
+  de inserção deliberadamente errada: o cubo de trás entra na lista primeiro.
+  Sem profundidade ele apareceria por cima, porque quem pinta por último vence;
+- o giro é real, e a lateral aparece conforme o cubo roda.
 
-- **o patch no mkxp-z, escrito**, em `tools/mkxp-z-patch/prism3d.patch`, com o
-  README de aplicar, compilar e testar ao lado dele. Base:
-  `826929eeb3ebc4b887c011604919217a790770f4`. Quatro arquivos novos e seis
-  alterados, todos com pouca coisa. `prism3d.cpp` e `prism3d-binding.cpp`
-  passam em `g++ -fsyntax-only` contra os cabeçalhos reais do motor, do SDL2 e
-  do Ruby, sem aviso.
+Falta o quarto: mudar o `z` do elemento e ver o cubo ficar atrás de um sprite e
+na frente de outro. Hoje o plugin de ensaio usa `z` 5000, por cima de tudo.
 
-Não feito, e é o próximo passo:
+Feito e no `main` do Prism:
 
-- o fork no GitHub e o build pela CI deles;
-- rodar dentro do jogo.
+- investigação do runtime (este documento);
+- protótipo do renderizador em `tools/prism3d-prototype/`;
+- o patch do motor em `tools/mkxp-z-patch/`;
+- o plugin de ensaio em `Game/essentials-v21.1/Plugins/PrismTest3D/`.
 
-O que o protótipo **não** prova, e onde mora o risco: ele rodou no contexto
-dele, com framebuffer pedido com 24 bits de profundidade. Dentro do mkxp-z o
-alvo é um FBO **sem profundidade nenhuma**. Ligar `GL_DEPTH_TEST` num alvo sem
-anexo de profundidade não dá erro: simplesmente não faz nada. É o risco
-número um do próximo passo.
+O fork vive em `github.com/gbavn/mkxp-z`. O ramo `autobuild` e o ramo `dev`
+são os que a CI deles observa, e é por isso que os nossos ramos usam esses
+nomes.
+
+---
+
+## 1.1. As quatro armadilhas que custaram rodadas de CI
+
+Nenhuma delas aparece compilando no Linux, que é onde a verificação local
+acontece. Ficam registradas para não custarem uma segunda vez.
+
+**`near` e `far` são macros no Windows.** O `windef.h` as define, vazias,
+herança dos ponteiros segmentados de 16 bits. Uma função de projeção com
+parâmetros assim vira `( + ) / ( - )` depois do pré-processador. Por isso os
+planos se chamam `nearPlane` e `farPlane`.
+
+**O build do macOS não usa o meson.** Ele usa `macos/mkxp-z.xcodeproj`, com a
+lista de fontes escrita à mão no `project.pbxproj`. Acrescentar arquivo ao
+`meson.build` não basta: o Mac compila sem ele e quebra no link, com
+`Undefined symbols`. Arquivo novo entra nas **quatro** fases de Sources.
+
+**A CI só compila em push nos ramos `dev` e `autobuild`.** Em outro nome não
+roda build nenhum e não aparece erro. Em fork, a aba Actions também vem
+desligada e precisa de um clique, uma vez só.
+
+**O carregador de funções de OpenGL não checa nada.** Em `gl-fun.cpp:71`:
+
+```c
+gl.name = (type) SDL_GL_GetProcAddress("gl" #name EXT_SUFFIX);
+```
+
+Função que o driver não tem vira ponteiro nulo, e chamar ponteiro nulo derruba
+o processo com violação de acesso, sem mensagem. O patch acrescenta doze
+funções, e cada uma seria um jeito de cair em silêncio. Todas são conferidas
+de uma vez em `initGLFunctions`, e a bandeira `gl.prism3D` diz se o passo 3D
+pode existir.
+
+---
+
+## 1.2. Um bug do mkxp-z que não é nosso, e que bloqueava tudo
+
+**Nenhum build do mkxp-z 2.4.2 abre o Essentials v21.1.** Não é o nosso patch:
+o build limpo, compilado da mesma base sem uma linha nossa, também cai. O que
+abre é o `Game.exe` do kit, que é uma versão mais antiga do motor.
+
+A causa está em `src/util/encoding.h`:
+
+```cpp
+iconv_t cd = iconv_open("UTF-8", charset);
+// sem checagem
+size_t result = iconv(cd, &inPtr, &inLen, &outPtr, &outLen);
+```
+
+`iconv_open` devolve `(iconv_t)-1` quando não conhece a codificação que o
+`uchardet` adivinhou, e esse `-1` segue para `iconv()`, que o trata como
+ponteiro e o dereferencia. Violação de acesso dentro da `libiconv`, antes de
+qualquer janela.
+
+O caminho é `Config::readGameINI`, que lê o `Title` do `Game.ini` e chama
+`Encoding::convertString`. Isso também explica uma diferença que confundiu o
+diagnóstico por várias rodadas: `readGameINI` procura um `.ini` com o **nome do
+executável**. Numa pasta onde o binário se chama `mkxp-z.exe` e não existe
+`mkxp-z.ini`, o trecho inteiro é pulado, e o programa vai muito mais longe.
+
+O conserto está no patch. **Vale mandar de volta para o mkxp-z**, porque
+atinge qualquer pessoa que compile a versão atual.
+
+---
+
+## 1.3. Como diagnosticar crash no Windows, já que o método importa
+
+Três tentativas de ler diagnóstico falharam antes de uma funcionar, e cada
+falha custou uma rodada. O que **não** funciona:
+
+- `Game.exe > log.txt 2>&1` no cmd. O executável é do subsistema gráfico
+  (`meson.build:195`), nasce sem console, e o arquivo sai vazio. Testado
+  também com um build que sabidamente funciona, para não confundir "morreu
+  cedo" com "captura quebrada";
+- o console que o motor aloca em modo debug, porque a janela fecha junto com o
+  processo;
+- `freopen` em `stderr` com `std::cerr`. O arquivo é criado e fica vazio.
+
+O que funciona, e está no patch como `src/util/prism-trace.h` e `.cpp`:
+
+1. **rastro com `CreateFileA` e `WriteFile` direto**, abrindo e fechando o
+   arquivo a cada linha. Isso elimina iostream, stdio, buffer do CRT, SDL e
+   console de uma vez. Caminho pela variável `MKXPZ_LOG_FILE`;
+2. **marcadores** no caminho de inicialização. O último que aparecer é onde
+   morreu, sem margem para dúvida;
+3. **executável com símbolos guardado pela CI**. O workflow roda `strip`, então
+   o `autobuild.yml` do fork guarda também um `mkxp-z-symbols.exe` antes disso;
+4. **resolver o endereço fora da máquina do usuário**. O Visualizador de
+   Eventos do Windows dá o deslocamento da falha:
+
+   ```
+   powershell -Command "Get-WinEvent -FilterHashtable @{LogName='Application';ID=1000} -MaxEvents 1 | Format-List Message"
+   ```
+
+   Somando a base da imagem (`0x140000000`) e comparando com
+   `nm -C --defined-only --numeric-sort mkxp-z-symbols.exe`, o endereço vira
+   nome de função. Foi assim que `0xb613a3` virou `libiconv+0x13` e fechou o
+   caso. Não precisa de WinDbg nem de ambiente de compilação no Windows;
+5. **minidump** com `SetUnhandledExceptionFilter` e `MiniDumpWriteDump`, como
+   plano B, quando o nome da função não bastar.
 
 ---
 

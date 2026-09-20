@@ -1,3 +1,25 @@
+diff --git a/.github/workflows/autobuild.yml b/.github/workflows/autobuild.yml
+index 113a9cd..35c9eb4 100644
+--- a/.github/workflows/autobuild.yml
++++ b/.github/workflows/autobuild.yml
+@@ -55,6 +55,9 @@ jobs:
+           meson setup build
+           cd build
+           ninja
++          # Copia com simbolos, antes do strip. Sem ela um endereco de crash
++          # nao resolve para funcao nenhuma, e o minidump fica ilegivel.
++          cp ./mkxp-z.exe ./mkxp-z-symbols.exe
+           strip ./mkxp-z.exe
+ 
+       - name: Prepare archive
+@@ -67,6 +70,7 @@ jobs:
+           cp -r ../../windows/build-mingw64/lib/ruby/3.1.0 .
+           mv ./3.1.0 ./stdlib
+           cp ../mkxp-z.exe .
++          cp ../mkxp-z-symbols.exe .
+           cp ../../mkxp.json .
+           cp -r ../../scripts .
+           cp ../../assets/LICENSE.mkxp-z-with-https.txt .
 diff --git a/binding/binding-mri.cpp b/binding/binding-mri.cpp
 index 3c54842..8e794a7 100644
 --- a/binding/binding-mri.cpp
@@ -34,10 +56,10 @@ index 933a72d..f2785b0 100644
  if steamworks == true
 diff --git a/binding/prism3d-binding.cpp b/binding/prism3d-binding.cpp
 new file mode 100644
-index 0000000..77b9ac4
+index 0000000..d529f20
 --- /dev/null
 +++ b/binding/prism3d-binding.cpp
-@@ -0,0 +1,203 @@
+@@ -0,0 +1,205 @@
 +/*
 +** prism3d-binding.cpp
 +**
@@ -61,6 +83,7 @@ index 0000000..77b9ac4
 +*/
 +
 +#include "binding-util.h"
++#include "debugwriter.h"
 +#include "graphics.h"
 +#include "prism3d.h"
 +#include "sharedstate.h"
@@ -227,6 +250,7 @@ index 0000000..77b9ac4
 +}
 +
 +void prism3DBindingInit() {
++    Debug() << "Prism3D: registrando o modulo Ruby";
 +    VALUE module = rb_define_module("Prism3D");
 +
 +    _rb_define_module_function(module, "start", prism3DStart);
@@ -242,13 +266,17 @@ index 0000000..77b9ac4
 +    _rb_define_module_function(module, "depth_test=", prism3DSetDepth);
 +}
 diff --git a/macos/mkxp-z.xcodeproj/project.pbxproj b/macos/mkxp-z.xcodeproj/project.pbxproj
-index 106b790..56d013e 100644
+index 106b790..c730f72 100644
 --- a/macos/mkxp-z.xcodeproj/project.pbxproj
 +++ b/macos/mkxp-z.xcodeproj/project.pbxproj
-@@ -7,6 +7,14 @@
+@@ -7,6 +7,18 @@
  	objects = {
  
  /* Begin PBXBuildFile section */
++		3D000000000000000000001D /* prism-trace.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 3D00000000000000000000A5 /* prism-trace.cpp */; };
++		3D000000000000000000002D /* prism-trace.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 3D00000000000000000000A5 /* prism-trace.cpp */; };
++		3D000000000000000000003D /* prism-trace.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 3D00000000000000000000A5 /* prism-trace.cpp */; };
++		3D000000000000000000004D /* prism-trace.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 3D00000000000000000000A5 /* prism-trace.cpp */; };
 +		3D000000000000000000001B /* prism3d.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 3D00000000000000000000A1 /* prism3d.cpp */; };
 +		3D000000000000000000001C /* prism3d-binding.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 3D00000000000000000000A4 /* prism3d-binding.cpp */; };
 +		3D000000000000000000002B /* prism3d.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 3D00000000000000000000A1 /* prism3d.cpp */; };
@@ -260,17 +288,18 @@ index 106b790..56d013e 100644
  		02054AB6B60F49E3DF366CBD /* libjxl_dec.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 672947DA8FC50921A7ED814A /* libjxl_dec.a */; };
  		21B74169A8853D63648093D5 /* xbrz.frag in CopyFiles */ = {isa = PBXBuildFile; fileRef = 88734C4B8039751FD0A59FA7 /* xbrz.frag */; };
  		319D403193F13F7989325EEA /* bicubic.frag in CopyFiles */ = {isa = PBXBuildFile; fileRef = CBEA4C45BE737EE0FF5A8A4C /* bicubic.frag */; };
-@@ -966,6 +974,9 @@
+@@ -966,6 +978,10 @@
  		3B10ED862568E95E00372D13 /* gl-debug.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = "gl-debug.h"; sourceTree = "<group>"; };
  		3B10ED872568E95E00372D13 /* gl-fun.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = "gl-fun.h"; sourceTree = "<group>"; };
  		3B10ED882568E95E00372D13 /* gl-meta.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = "gl-meta.cpp"; sourceTree = "<group>"; };
 +		3D00000000000000000000A1 /* prism3d.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = "prism3d.cpp"; sourceTree = "<group>"; };
++		3D00000000000000000000A5 /* prism-trace.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = "prism-trace.cpp"; sourceTree = "<group>"; };
 +		3D00000000000000000000A2 /* prism3d.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = "prism3d.h"; sourceTree = "<group>"; };
 +		3D00000000000000000000A3 /* prism3d-math.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = "prism3d-math.h"; sourceTree = "<group>"; };
  		3B10ED892568E95E00372D13 /* tileatlasvx.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = tileatlasvx.cpp; sourceTree = "<group>"; };
  		3B10ED8A2568E95E00372D13 /* glstate.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = glstate.cpp; sourceTree = "<group>"; };
  		3B10ED8B2568E95E00372D13 /* tileatlas.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = tileatlas.h; sourceTree = "<group>"; };
-@@ -1014,6 +1025,7 @@
+@@ -1014,6 +1030,7 @@
  		3B10EDE72568E96A00372D13 /* tilemap-binding.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = "tilemap-binding.cpp"; sourceTree = "<group>"; };
  		3B10EDE82568E96A00372D13 /* miniffi-binding.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = "miniffi-binding.cpp"; sourceTree = "<group>"; };
  		3B10EDE92568E96A00372D13 /* graphics-binding.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = "graphics-binding.cpp"; sourceTree = "<group>"; };
@@ -278,17 +307,18 @@ index 106b790..56d013e 100644
  		3B10EDEA2568E96A00372D13 /* plane-binding.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = "plane-binding.cpp"; sourceTree = "<group>"; };
  		3B10EDEB2568E96A00372D13 /* binding-types.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = "binding-types.h"; sourceTree = "<group>"; };
  		3B10EDEC2568E96A00372D13 /* font-binding.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = "font-binding.cpp"; sourceTree = "<group>"; };
-@@ -1598,6 +1610,9 @@
+@@ -1598,6 +1615,10 @@
  				3B10ED862568E95E00372D13 /* gl-debug.h */,
  				3B10ED872568E95E00372D13 /* gl-fun.h */,
  				3B10ED882568E95E00372D13 /* gl-meta.cpp */,
 +				3D00000000000000000000A1 /* prism3d.cpp */,
++				3D00000000000000000000A5 /* prism-trace.cpp */,
 +				3D00000000000000000000A2 /* prism3d.h */,
 +				3D00000000000000000000A3 /* prism3d-math.h */,
  				3B10ED892568E95E00372D13 /* tileatlasvx.cpp */,
  				3B10ED8A2568E95E00372D13 /* glstate.cpp */,
  				3B10ED8B2568E95E00372D13 /* tileatlas.h */,
-@@ -1631,6 +1646,7 @@
+@@ -1631,6 +1652,7 @@
  				3B10EDD72568E96A00372D13 /* filesystem-binding.cpp */,
  				3B10EDEC2568E96A00372D13 /* font-binding.cpp */,
  				3B10EDE92568E96A00372D13 /* graphics-binding.cpp */,
@@ -296,15 +326,16 @@ index 106b790..56d013e 100644
  				3B522DDB259C1E53003301C4 /* http-binding.cpp */,
  				3B10EDDC2568E96A00372D13 /* input-binding.cpp */,
  				3B10EDE82568E96A00372D13 /* miniffi-binding.cpp */,
-@@ -2301,6 +2317,7 @@
+@@ -2301,6 +2323,8 @@
  				3B1C239125A19C600075EF5D /* binding-util.cpp in Sources */,
  				3B1C239225A19C600075EF5D /* plane-binding.cpp in Sources */,
  				3B1C239325A19C600075EF5D /* gl-meta.cpp in Sources */,
 +				3D000000000000000000001B /* prism3d.cpp in Sources */,
++				3D000000000000000000001D /* prism-trace.cpp in Sources */,
  				3B1C239425A19C600075EF5D /* etc.cpp in Sources */,
  				3B1C239525A19C600075EF5D /* shader.cpp in Sources */,
  				3B1C239625A19C600075EF5D /* tilemap.cpp in Sources */,
-@@ -2321,6 +2338,7 @@
+@@ -2321,6 +2345,7 @@
  				3B1C23A725A19C600075EF5D /* midisource.cpp in Sources */,
  				3BA69457263DAB53004194EB /* libnsgif.c in Sources */,
  				3B1C23A825A19C600075EF5D /* graphics-binding.cpp in Sources */,
@@ -312,15 +343,16 @@ index 106b790..56d013e 100644
  				3B1C23A925A19C600075EF5D /* plane.cpp in Sources */,
  				3B1C23AA25A19C600075EF5D /* tilequad.cpp in Sources */,
  				3B1C23AD25A19C600075EF5D /* tileatlas.cpp in Sources */,
-@@ -2389,6 +2407,7 @@
+@@ -2389,6 +2414,8 @@
  				3BBE87A32705A73400A574AE /* binding-util.cpp in Sources */,
  				3BBE87A42705A73400A574AE /* plane-binding.cpp in Sources */,
  				3BBE87A52705A73400A574AE /* gl-meta.cpp in Sources */,
 +				3D000000000000000000002B /* prism3d.cpp in Sources */,
++				3D000000000000000000002D /* prism-trace.cpp in Sources */,
  				3BBE87A62705A73400A574AE /* etc.cpp in Sources */,
  				3BBE87A72705A73400A574AE /* shader.cpp in Sources */,
  				3BBE87A82705A73400A574AE /* tilemap.cpp in Sources */,
-@@ -2409,6 +2428,7 @@
+@@ -2409,6 +2436,7 @@
  				3BBE87B62705A73400A574AE /* midisource.cpp in Sources */,
  				3BBE87B72705A73400A574AE /* libnsgif.c in Sources */,
  				3BBE87B82705A73400A574AE /* graphics-binding.cpp in Sources */,
@@ -328,15 +360,16 @@ index 106b790..56d013e 100644
  				3BBE87B92705A73400A574AE /* plane.cpp in Sources */,
  				3BBE87BA2705A73400A574AE /* tilequad.cpp in Sources */,
  				3BBE87BB2705A73400A574AE /* tileatlas.cpp in Sources */,
-@@ -2471,6 +2491,7 @@
+@@ -2471,6 +2499,8 @@
  				3BC65DAA2584F3AD0063AFF1 /* binding-util.cpp in Sources */,
  				3BC65DAB2584F3AD0063AFF1 /* plane-binding.cpp in Sources */,
  				3BC65DAC2584F3AD0063AFF1 /* gl-meta.cpp in Sources */,
 +				3D000000000000000000003B /* prism3d.cpp in Sources */,
++				3D000000000000000000003D /* prism-trace.cpp in Sources */,
  				3BC65DAD2584F3AD0063AFF1 /* etc.cpp in Sources */,
  				3BC65DAE2584F3AD0063AFF1 /* shader.cpp in Sources */,
  				3BC65DAF2584F3AD0063AFF1 /* tilemap.cpp in Sources */,
-@@ -2490,6 +2511,7 @@
+@@ -2490,6 +2520,7 @@
  				3BC65DC02584F3AD0063AFF1 /* midisource.cpp in Sources */,
  				3B3F7D2A25B1A73A00EA5F1C /* SettingsMenuController.mm in Sources */,
  				3BC65DC12584F3AD0063AFF1 /* graphics-binding.cpp in Sources */,
@@ -344,15 +377,16 @@ index 106b790..56d013e 100644
  				3BC65DC22584F3AD0063AFF1 /* plane.cpp in Sources */,
  				3BC65DC32584F3AD0063AFF1 /* tilequad.cpp in Sources */,
  				9656359B279A5B74003D6A75 /* theoraplay.c in Sources */,
-@@ -2551,6 +2573,7 @@
+@@ -2551,6 +2582,8 @@
  				3B10EE082568E96A00372D13 /* binding-util.cpp in Sources */,
  				3B10EE052568E96A00372D13 /* plane-binding.cpp in Sources */,
  				3B10EDC72568E95E00372D13 /* gl-meta.cpp in Sources */,
 +				3D000000000000000000004B /* prism3d.cpp in Sources */,
++				3D000000000000000000004D /* prism-trace.cpp in Sources */,
  				3B10EDAB2568E95E00372D13 /* etc.cpp in Sources */,
  				3B10EDCA2568E95E00372D13 /* shader.cpp in Sources */,
  				3B10EDCE2568E95E00372D13 /* tilemap.cpp in Sources */,
-@@ -2570,6 +2593,7 @@
+@@ -2570,6 +2603,7 @@
  				3B10EDB32568E95E00372D13 /* midisource.cpp in Sources */,
  				3B3F7D2B25B1A73A00EA5F1C /* SettingsMenuController.mm in Sources */,
  				3B10EE042568E96A00372D13 /* graphics-binding.cpp in Sources */,
@@ -360,8 +394,62 @@ index 106b790..56d013e 100644
  				3B10EDD12568E95E00372D13 /* plane.cpp in Sources */,
  				3B10EDC32568E95E00372D13 /* tilequad.cpp in Sources */,
  				9656359C279A5B74003D6A75 /* theoraplay.c in Sources */,
+diff --git a/src/display/gl/gl-fun.cpp b/src/display/gl/gl-fun.cpp
+index 3dd776b..1a89381 100644
+--- a/src/display/gl/gl-fun.cpp
++++ b/src/display/gl/gl-fun.cpp
+@@ -20,6 +20,7 @@
+  */
+ 
+ #include "gl-fun.h"
++#include "prism-trace.h"
+ 
+ #include "boost-hash.h"
+ #include "exception.h"
+@@ -204,4 +205,41 @@ void initGLFunctions()
+     
+     if (!gles || glMajor >= 3 || HAVE_EXT(OES_texture_npot))
+         gl.npot_repeat = true;
++
++    /*
++     * Conferencia das funcoes que o passo 3D do Prism acrescentou.
++     *
++     * O carregador acima guarda o que SDL_GL_GetProcAddress devolve, sem
++     * checar: funcao que o driver nao tem vira ponteiro nulo, e chamar
++     * ponteiro nulo derruba o processo na hora, com violacao de acesso e sem
++     * mensagem nenhuma. Como sao doze funcoes novas, cada uma e um jeito de
++     * cair em silencio. Aqui cada ausencia vira uma linha no rastro, com nome.
++     */
++#define PRISM_CHECK_GL(name) \
++    if (!gl.name) { \
++        prismTrace("GL AUSENTE: gl" #name); \
++        prismGLComplete = false; \
++    }
++
++    bool prismGLComplete = true;
++
++    PRISM_CHECK_GL(IsEnabled)
++    PRISM_CHECK_GL(GetBooleanv)
++    PRISM_CHECK_GL(DepthFunc)
++    PRISM_CHECK_GL(DepthMask)
++    PRISM_CHECK_GL(CullFace)
++    PRISM_CHECK_GL(FrontFace)
++    PRISM_CHECK_GL(Uniform3f)
++    PRISM_CHECK_GL(GenRenderbuffers)
++    PRISM_CHECK_GL(DeleteRenderbuffers)
++    PRISM_CHECK_GL(BindRenderbuffer)
++    PRISM_CHECK_GL(RenderbufferStorage)
++    PRISM_CHECK_GL(FramebufferRenderbuffer)
++    PRISM_CHECK_GL(CheckFramebufferStatus)
++
++#undef PRISM_CHECK_GL
++
++    gl.prism3D = prismGLComplete;
++    prismTrace(prismGLComplete ? "GL: as doze funcoes do Prism3D estao todas presentes"
++                               : "GL: falta funcao, o passo 3D fica desligado");
+ }
 diff --git a/src/display/gl/gl-fun.h b/src/display/gl/gl-fun.h
-index 634da66..929c2e1 100644
+index 634da66..dd382b2 100644
 --- a/src/display/gl/gl-fun.h
 +++ b/src/display/gl/gl-fun.h
 @@ -38,6 +38,15 @@ typedef void (APIENTRYP _PFNGLGETINTEGERVPROC) (GLenum pname, GLint *params);
@@ -452,6 +540,15 @@ index 634da66..929c2e1 100644
  
  #define GL_FBO_BLIT_FUN \
  	GL_FUN(BlitFramebuffer, _PFNGLBLITFRAMEBUFFERPROC)
+@@ -227,6 +276,8 @@ struct GLFunctions
+ 
+ 	bool glsles;
+ 	bool unpack_subimage;
++	/* Todas as funcoes que o passo 3D precisa foram encontradas. */
++	bool prism3D;
+ 	bool npot_repeat;
+ 
+ #undef GL_FUN
 diff --git a/src/display/gl/gl-util.h b/src/display/gl/gl-util.h
 index 099edb9..ecb7825 100644
 --- a/src/display/gl/gl-util.h
@@ -1143,10 +1240,18 @@ index 0000000..4565b07
 +
 +#endif // PRISM3D_H
 diff --git a/src/display/graphics.cpp b/src/display/graphics.cpp
-index 7ca41c4..2856151 100644
+index 7ca41c4..d7f4dd5 100644
 --- a/src/display/graphics.cpp
 +++ b/src/display/graphics.cpp
-@@ -440,6 +440,16 @@ struct MovieOpenHandler : FileSystem::OpenHandler
+@@ -27,6 +27,7 @@
+ #include "bitmap.h"
+ #include "config.h"
+ #include "debugwriter.h"
++#include "prism-trace.h"
+ #include "disposable.h"
+ #include "etc.h"
+ #include "etc-internal.h"
+@@ -440,23 +441,75 @@ struct MovieOpenHandler : FileSystem::OpenHandler
  
  struct PingPong {
      TEXFBO rt[2];
@@ -1160,15 +1265,23 @@ index 7ca41c4..2856151 100644
 +     * 3D. Dois renderbuffers de 16 bits na resolucao da tela custam pouco.
 +     */
 +    RBO::ID depth[2];
++    bool depthSupported;
      uint8_t srcInd, dstInd;
      int screenW, screenH;
      
-@@ -449,14 +459,28 @@ struct PingPong {
+     PingPong(int screenW, int screenH)
+-    : srcInd(0), dstInd(1), screenW(screenW), screenH(screenH) {
++    : depthSupported(checkDepthSupport()),
++      srcInd(0), dstInd(1), screenW(screenW), screenH(screenH) {
++        prismTrace("F1: PingPong nascendo");
+         for (int i = 0; i < 2; ++i) {
              TEXFBO::init(rt[i]);
              TEXFBO::allocEmpty(rt[i], screenW, screenH);
              TEXFBO::linkFBO(rt[i]);
-+            depth[i] = RBO::gen();
-+            allocDepth(i, screenW, screenH);
++            if (depthSupported) {
++                depth[i] = RBO::gen();
++                allocDepth(i, screenW, screenH);
++            }
              gl.ClearColor(0, 0, 0, 1);
              FBO::clear();
          }
@@ -1178,22 +1291,49 @@ index 7ca41c4..2856151 100644
 -        for (int i = 0; i < 2; ++i)
 +        for (int i = 0; i < 2; ++i) {
              TEXFBO::fini(rt[i]);
-+            RBO::del(depth[i]);
++            if (depthSupported)
++                RBO::del(depth[i]);
 +        }
 +    }
 +    
 +    /* Dimensiona o renderbuffer e o liga ao FBO daquele alvo. */
 +    void allocDepth(int i, int width, int height) {
++        if (!depthSupported)
++            return;
++
 +        RBO::bind(depth[i]);
 +        RBO::allocDepth(width, height);
 +        RBO::unbind();
 +        
 +        FBO::bind(rt[i].fbo);
 +        FBO::setDepthTarget(depth[i]);
++
++        const GLenum status = gl.CheckFramebufferStatus(GL_FRAMEBUFFER);
++        Debug() << "Prism3D: alvo" << i << "em" << width << "x" << height
++                << "| FBO" << (status == GL_FRAMEBUFFER_COMPLETE ? "completo"
++                                                                 : "INCOMPLETO")
++                << "| status" << (int)status;
++    }
++
++    /*
++     * O carregador de funcoes de GL (gl-fun.cpp:71) nao checa nada: funcao que
++     * o driver nao tem vira ponteiro nulo, e chamar um ponteiro nulo derruba o
++     * processo sem mensagem. As de renderbuffer so existem com
++     * ARB_framebuffer_object ou a variante EXT, entao aqui elas sao conferidas
++     * antes de qualquer uso. Sem elas o jogo roda igual, so sem o passo 3D.
++     */
++    static bool checkDepthSupport() {
++        /* A conferencia de verdade esta em initGLFunctions, que olha as doze
++           funcoes de uma vez e registra cada ausencia pelo nome. */
++        return gl.prism3D;
      }
      
      TEXFBO &backBuffer() { return rt[srcInd]; }
-@@ -468,8 +492,16 @@ struct PingPong {
+@@ -465,11 +518,20 @@ struct PingPong {
+     
+     /* Better not call this during render cycles */
+     void resize(int width, int height) {
++        prismTrace("R: PingPong redimensionando");
          screenW = width;
          screenH = height;
          
@@ -1211,15 +1351,279 @@ index 7ca41c4..2856151 100644
      }
      
      void startRender() { bind(); }
+diff --git a/src/main.cpp b/src/main.cpp
+index 6e09d71..7611aa1 100644
+--- a/src/main.cpp
++++ b/src/main.cpp
+@@ -41,6 +41,7 @@
+ #include "sharedstate.h"
+ #include "eventthread.h"
+ #include "util/debugwriter.h"
++#include "util/prism-trace.h"
+ #include "util/exception.h"
+ #include "display/gl/gl-debug.h"
+ #include "display/gl/gl-fun.h"
+@@ -118,6 +119,7 @@ static SDL_GLContext initGL(SDL_Window *win, Config &conf,
+                             RGSSThreadData *threadData);
+ 
+ int rgssThreadFun(void *userdata) {
++  prismTrace("D: thread do RGSS comecou");
+   RGSSThreadData *threadData = static_cast<RGSSThreadData *>(userdata);
+ 
+ #ifdef MKXPZ_INIT_GL_LATER
+@@ -125,6 +127,7 @@ int rgssThreadFun(void *userdata) {
+       initGL(threadData->window, threadData->config, threadData);
+   if (!threadData->glContext)
+     return 0;
++  prismTrace("E: contexto de OpenGL pronto");
+ #else
+   SDL_GL_MakeCurrent(threadData->window, threadData->glContext);
+ #endif
+@@ -153,7 +156,9 @@ int rgssThreadFun(void *userdata) {
+   alcMakeContextCurrent(alcCtx);
+ 
+   try {
++    prismTrace("F: vai criar o SharedState (Graphics, FBOs)");
+     SharedState::initInstance(threadData);
++    prismTrace("G: SharedState criado");
+   } catch (const Exception &exc) {
+     rgssThreadError(threadData, exc.msg);
+     alcDestroyContext(alcCtx);
+@@ -162,7 +167,9 @@ int rgssThreadFun(void *userdata) {
+   }
+ 
+   /* Start script execution */
++  prismTrace("H: vai executar os scripts Ruby");
+   scriptBinding->execute();
++  prismTrace("I: scripts terminaram");
+ 
+   threadData->rqTermAck.set();
+   threadData->ethread->requestTerminate();
+@@ -216,6 +223,8 @@ static void setupWindowIcon(const Config &conf, SDL_Window *win) {
+ }
+ 
+ int main(int argc, char *argv[]) {
++    prismInstallCrashHandler();
++    prismTrace("A: main entrou");
+     SDL_SetHint(SDL_HINT_VIDEO_MINIMIZE_ON_FOCUS_LOSS, "0");
+     SDL_SetHint(SDL_HINT_ACCELEROMETER_AS_JOYSTICK, "0");
+ 
+@@ -252,9 +261,12 @@ int main(int argc, char *argv[]) {
+ #endif
+     
+     /* now we load the config */
++    prismTrace("A2: vai ler a configuracao");
+     Config conf;
+     conf.read(argc, argv);
+ 
++    prismTrace("B: configuracao lida");
++
+ #if defined(__WIN32__)
+     // Create a debug console in debug mode
+     if (conf.winConsole) {
 diff --git a/src/meson.build b/src/meson.build
-index 4ce97ae..c7720a8 100755
+index 4ce97ae..8167416 100755
 --- a/src/meson.build
 +++ b/src/meson.build
-@@ -152,6 +152,7 @@ main_source = files(
+@@ -30,6 +30,8 @@ endif
+ if host_system == 'windows'
+     bz2 = dependency('bzip2', static: build_static)
+     iconv = compilers['cpp'].find_library('iconv', static: build_static)
++    # dbghelp: o gravador de minidump do rastro de diagnostico (prism-trace.cpp)
++    global_dependencies += compilers['cpp'].find_library('dbghelp')
+ else
+     bz2 = compilers['cpp'].find_library('bz2')
+     # FIXME: Specifically asking for static doesn't work if iconv isn't
+@@ -152,6 +154,8 @@ main_source = files(
      'display/gl/gl-debug.cpp',
      'display/gl/gl-fun.cpp',
      'display/gl/gl-meta.cpp',
 +    'display/gl/prism3d.cpp',
++    'util/prism-trace.cpp',
      'display/gl/glstate.cpp',
      'display/gl/scene.cpp',
      'display/gl/shader.cpp',
+diff --git a/src/util/encoding.h b/src/util/encoding.h
+index 6d491cb..1b0551d 100644
+--- a/src/util/encoding.h
++++ b/src/util/encoding.h
+@@ -14,6 +14,7 @@
+ #include "util/encoding.h"
+ #include <iconv.h>
+ #include <uchardet.h>
++#include "prism-trace.h"
+ #include <errno.h>
+ 
+ namespace Encoding {
+@@ -23,7 +24,13 @@ static std::string getCharset(std::string &str) {
+     uchardet_handle_data(ud, str.c_str(), str.length());
+     uchardet_data_end(ud);
+     
+-    std::string ret(uchardet_get_charset(ud));
++    const char *guess = uchardet_get_charset(ud);
++    prismTrace((std::string("UCHARDET: adivinhou '") + (guess ? guess : "(nulo)") +
++                "' para \"" + str + "\"").c_str());
++
++    /* uchardet_get_charset pode devolver nulo, e construir std::string a
++       partir de nulo e comportamento indefinido. */
++    std::string ret(guess ? guess : "");
+     uchardet_delete(ud);
+     
+     if (ret.empty())
+@@ -37,8 +44,25 @@ static std::string convertString(std::string &str, const char *charset) {
+         return std::string(str);
+     }
+     
++    prismTrace((std::string("ICONV: abrindo conversao de '") + charset +
++                "' para UTF-8").c_str());
++
+     iconv_t cd = iconv_open("UTF-8", charset);
+-    
++
++    /*
++     * iconv_open devolve (iconv_t)-1 quando nao conhece a codificacao, e o
++     * codigo original passava esse -1 direto para iconv(), que o trata como
++     * ponteiro e o dereferencia. Isso derruba o processo com violacao de
++     * acesso dentro da libiconv, sem mensagem nenhuma, no meio da leitura do
++     * Game.ini. Aqui vira excecao, que readGameINI ja captura para cair no
++     * titulo padrao.
++     */
++    if (cd == (iconv_t)-1) {
++        prismTrace("ICONV: iconv_open FALHOU, codificacao desconhecida");
++        throw Exception(Exception::MKXPError,
++                        "Unknown encoding (Guessed: %s)", charset);
++    }
++
+     size_t inLen = str.size();
+     size_t outLen = inLen * 4;
+     std::string buf(outLen, '\0');
+diff --git a/src/util/prism-trace.cpp b/src/util/prism-trace.cpp
+new file mode 100644
+index 0000000..e82c53f
+--- /dev/null
++++ b/src/util/prism-trace.cpp
+@@ -0,0 +1,91 @@
++#include "prism-trace.h"
++
++#include <stdlib.h>
++#include <string.h>
++
++#ifdef _WIN32
++#include <windows.h>
++#include <dbghelp.h>
++#else
++#include <stdio.h>
++#endif
++
++static const char *tracePath() {
++    return getenv("MKXPZ_LOG_FILE");
++}
++
++void prismTrace(const char *message) {
++    const char *path = tracePath();
++    if (!path || !*path || !message)
++        return;
++
++#ifdef _WIN32
++    /* FILE_APPEND_DATA mais OPEN_ALWAYS: cria na primeira vez e acrescenta nas
++       seguintes. O arquivo fecha a cada linha, entao o conteudo ja esta em
++       disco quando o processo cai. */
++    HANDLE file = CreateFileA(path, FILE_APPEND_DATA,
++                              FILE_SHARE_READ | FILE_SHARE_WRITE, NULL,
++                              OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
++    if (file == INVALID_HANDLE_VALUE)
++        return;
++
++    DWORD written = 0;
++    WriteFile(file, message, (DWORD)strlen(message), &written, NULL);
++    WriteFile(file, "\r\n", 2, &written, NULL);
++    CloseHandle(file);
++#else
++    FILE *file = fopen(path, "a");
++    if (!file)
++        return;
++
++    fputs(message, file);
++    fputc('\n', file);
++    fclose(file);
++#endif
++}
++
++#ifdef _WIN32
++/*
++** O gravador de minidump.
++**
++** Com ele, um 0xC0000005 deixa de ser um numero e vira instrucao, registradores
++** e pilha de chamadas, que e o que o WinDbg precisa. O arquivo sai ao lado do
++** rastro, com a extensao trocada para .dmp.
++*/
++static LONG WINAPI prismCrashHandler(EXCEPTION_POINTERS *ep) {
++    prismTrace("!!! EXCECAO NAO TRATADA, gravando minidump");
++
++    const char *path = tracePath();
++    if (!path || !*path)
++        return EXCEPTION_CONTINUE_SEARCH;
++
++    char dumpPath[1024];
++    strncpy(dumpPath, path, sizeof(dumpPath) - 5);
++    dumpPath[sizeof(dumpPath) - 5] = '\0';
++    strcat(dumpPath, ".dmp");
++
++    HANDLE file = CreateFileA(dumpPath, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS,
++                              FILE_ATTRIBUTE_NORMAL, NULL);
++    if (file == INVALID_HANDLE_VALUE)
++        return EXCEPTION_CONTINUE_SEARCH;
++
++    MINIDUMP_EXCEPTION_INFORMATION info;
++    memset(&info, 0, sizeof(info));
++    info.ThreadId = GetCurrentThreadId();
++    info.ExceptionPointers = ep;
++    info.ClientPointers = FALSE;
++
++    MiniDumpWriteDump(GetCurrentProcess(), GetCurrentProcessId(), file,
++                      MiniDumpWithFullMemory, &info, NULL, NULL);
++    CloseHandle(file);
++
++    prismTrace("minidump gravado");
++    return EXCEPTION_CONTINUE_SEARCH;
++}
++#endif
++
++void prismInstallCrashHandler() {
++#ifdef _WIN32
++    SetUnhandledExceptionFilter(prismCrashHandler);
++#endif
++}
+diff --git a/src/util/prism-trace.h b/src/util/prism-trace.h
+new file mode 100644
+index 0000000..71c692a
+--- /dev/null
++++ b/src/util/prism-trace.h
+@@ -0,0 +1,27 @@
++/*
++** prism-trace.h
++**
++** Rastro de inicializacao, para diagnosticar crash que acontece cedo demais
++** para qualquer log normal.
++**
++** Escreve direto no arquivo, com a chamada do sistema, sem passar por
++** iostream, por stdio, por buffer do CRT nem pelo SDL. Isso nao e preciosismo:
++** tentamos antes com redirecionamento do cmd e com freopen em stderr, e as
++** duas vezes o arquivo saiu vazio, sem sabermos se era o programa que morria
++** ou o mecanismo de captura que falhava. Aqui nao ha essa duvida.
++**
++** O caminho vem da variavel de ambiente MKXPZ_LOG_FILE. Sem ela, tudo isto e
++** silencioso e nao custa nada.
++*/
++
++#ifndef PRISM_TRACE_H
++#define PRISM_TRACE_H
++
++/** Acrescenta uma linha ao rastro. Abre e fecha o arquivo a cada chamada, de
++ *  proposito: assim nada se perde quando o processo morre de repente. */
++void prismTrace(const char *message);
++
++/** Instala o gravador de minidump, para o crash virar pilha de chamadas. */
++void prismInstallCrashHandler();
++
++#endif // PRISM_TRACE_H

@@ -80,6 +80,21 @@ Duas escolhas que fogem do plano original de `docs/runtime-3d.md`, e por quê:
 restauradas na mão dentro do `draw()`, em vez de virarem propriedade do cache
 do motor. É menos invasivo e some quando decidirmos formalizar.
 
+## O que este patch contém, além do 3D
+
+Ele carrega três coisas que não são 3D e que o trabalho exigiu:
+
+- **o conserto de um bug do mkxp-z** em `src/util/encoding.h`: `iconv_open`
+  tinha o retorno usado sem checagem, e o `(iconv_t)-1` de falha seguia para
+  `iconv()`, que o dereferencia. **Sem isso nenhum build do 2.4.2 abre o
+  Pokémon Essentials v21.1**, com ou sem Prism3D. Vale mandar de volta para o
+  projeto original;
+- **o rastro de diagnóstico** (`src/util/prism-trace.*`), que grava com
+  `WriteFile` direto e instala um gravador de minidump. Existe porque nenhum
+  método normal de log funciona num executável do subsistema gráfico;
+- **uma mudança no workflow** para a CI guardar um `mkxp-z-symbols.exe` antes
+  do `strip`, sem o qual endereço de crash não resolve para função.
+
 ## Duas armadilhas de plataforma, já pagas
 
 As duas apareceram na primeira rodada de CI e estão consertadas no patch. Ficam

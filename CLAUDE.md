@@ -228,10 +228,28 @@ de continuidade: traz o mapa do runtime com arquivo e linha, o patch mínimo
 arquivo por arquivo, a API Ruby do primeiro marco, o passo a passo do fork e
 do build pela CI, e uma tabela de diagnóstico. O protótipo do renderizador,
 já funcionando, vive em `tools/prism3d-prototype/` e não faz parte do build do
-editor. O patch do motor já está escrito, em `tools/mkxp-z-patch/`: o diff
-contra um commit fixo do mkxp-z, mais o README de aplicar, compilar pela CI
-deles e testar. O fonte do mkxp-z não entra aqui, porque ele é GPL e
-distribuir binário obriga a publicar o fork.
+editor. O patch do motor está em `tools/mkxp-z-patch/`: o diff contra um commit
+fixo do mkxp-z, mais o README de aplicar, compilar pela CI deles e testar. O
+fonte do mkxp-z não entra aqui, porque ele é GPL e distribuir binário obriga a
+publicar o fork; ele vive em `github.com/gbavn/mkxp-z`.
+
+**O marco 1 rodou**: dois cubos de malha de verdade, desenhados por OpenGL
+dentro do Essentials, com oclusão correta por pixel entre eles. O plugin de
+ensaio é `Game/essentials-v21.1/Plugins/PrismTest3D/`, e sai quando o marco
+fechar. Falta o quarto critério, que é o cubo ficar atrás de um sprite e na
+frente de outro conforme o `z` do elemento.
+
+Duas coisas dessa etapa que valem saber sem abrir o documento:
+
+- **nenhum build do mkxp-z 2.4.2 abre o Essentials v21.1 sem o conserto do
+  `iconv` que vai no patch.** O bug é deles, não nosso, e derruba o processo
+  antes de qualquer janela. O `Game.exe` que o kit traz é uma versão mais
+  antiga, por isso funciona;
+- **para diagnosticar crash no Windows, log normal não serve.** O executável é
+  do subsistema gráfico, então redirecionamento de cmd, console de debug e
+  `freopen` em `stderr` saem todos vazios. O que funciona é rastro com
+  `WriteFile` direto mais o executável com símbolos guardado pela CI, e está
+  descrito na seção 1.3 do documento.
 
 Resumo dos fatos apurados no fonte, com o detalhe no documento:
 
