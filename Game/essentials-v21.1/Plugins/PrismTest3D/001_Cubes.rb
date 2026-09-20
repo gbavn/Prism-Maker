@@ -42,6 +42,15 @@ module PrismTest3D
   # Onde plantar, em celulas, quando o mapa nao tiver objeto nenhum gravado.
   CELULA_PADRAO = [8, 8]
 
+  # Placas finas no chao, uma por celula, ao redor do objeto.
+  #
+  # Servem de regua: se elas ficarem grudadas nos tiles enquanto o mapa rola,
+  # a camera esta certa. Se deslizarem, a conversao de rolagem esta errada. E
+  # um teste que responde sozinho, sem depender de olhar o objeto inteiro e
+  # achar que parece certo.
+  GRADE = true
+  GRADE_RAIO = 3
+
   # [centro_x, centro_y, centro_z, largura, altura, profundidade, r, g, b]
   CAIXAS = [
     [1.15, 0.28, 1, 2.05, 0.18, 1.5, 0.659, 0.220, 0.165],
@@ -74,6 +83,21 @@ module PrismTest3D
     [2.45, 0.22, 1.72, 0.44, 0.2, 0.2, 0.725, 0.737, 0.769],
   ]
 
+  # O laboratorio, carregado de arquivo. Caminho relativo a pasta do jogo.
+  MODELO = "Plugins/PrismTest3D/model/lab.obj"
+
+  # Quantas unidades do arquivo valem uma celula. Modelo de jogo de DS costuma
+  # vir com 16, e as medidas deste batem: 116 por 80 por 70 unidades viram
+  # 7,3 por 5 por 4,4 celulas, que e tamanho de predio de mapa.
+  UNIDADES_POR_CELULA = 16.0
+
+  # Onde plantar o laboratorio, e quanto gira.
+  CELULA_DO_LAB = [12, 6]
+  LAB_YAW = 0.0
+
+  # Desliga as caixas do caminhao, para olhar so o laboratorio.
+  DESENHAR_CAMINHAO = false
+
   def running?
     defined?(Prism3D) ? true : false
   end
@@ -81,6 +105,14 @@ module PrismTest3D
   def start
     return unless running?
     Prism3D.start(ELEMENT_Z)
+
+    # Carregar uma vez so: o modelo vive no motor enquanto o jogo viver.
+    if @modelo.nil?
+      @modelo = Prism3D.load_model(MODELO, UNIDADES_POR_CELULA)
+      if @modelo.nil?
+        echoln "Prism3D: nao consegui carregar #{MODELO}" if defined?(echoln)
+      end
+    end
   end
 
   # Gira um ponto do chao em volta do pivo, para o modelo girar inteiro.
@@ -126,7 +158,28 @@ module PrismTest3D
     radianos = YAW * Math::PI / 180.0
     Prism3D.clear
 
+    if GRADE
+      (-GRADE_RAIO..GRADE_RAIO).each do |dx|
+        (-GRADE_RAIO..GRADE_RAIO).each do |dz|
+          # Placa de um tile, quase rente ao chao, no centro da celula. Serve
+          # de regua: se ficarem grudadas nos tiles enquanto o mapa rola, a
+          # camera esta certa.
+          tom = ((dx + dz) % 2 == 0) ? 0.85 : 0.35
+          Prism3D.add_box(CELULA_DO_LAB[0] + dx + 0.5, 0.02,
+                          CELULA_DO_LAB[1] + dz + 0.5,
+                          0.92, 0.04, 0.92, 0.0,
+                          tom, tom * 0.4, tom * 0.9)
+        end
+      end
+    end
+
+    if @modelo
+      Prism3D.add_model(@modelo, CELULA_DO_LAB[0], 0.0, CELULA_DO_LAB[1],
+                        LAB_YAW * Math::PI / 180.0)
+    end
+
     celulas.each do |celula|
+      next unless DESENHAR_CAMINHAO
       base_x = celula[0]
       base_z = celula[1]
 

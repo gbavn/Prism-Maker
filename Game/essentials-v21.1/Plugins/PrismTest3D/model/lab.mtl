@@ -1,0 +1,88 @@
+newmtl h_in
+Ka 0.972549 0.972549 0.972549
+Kd 0.7843137 0.7843137 0.7843137
+d 1
+Tr 1
+map_Ka h_in.png
+map_Kd h_in.png
+map_d h_in.png
+newmtl h_kage
+Ka 0.972549 0.972549 0.972549
+Kd 0.7843137 0.7843137 0.7843137
+d 0.2903226
+Tr 0.2903226
+map_Ka h_kage.png
+map_Kd h_kage.png
+map_d h_kage.png
+newmtl h_mado
+Ka 0.972549 0.972549 0.972549
+Kd 0.7843137 0.7843137 0.7843137
+d 1
+Tr 1
+map_Ka h_mado.png
+map_Kd h_mado.png
+map_d h_mado.png
+newmtl lambert1
+Ka 0 0 0
+Kd 0.3764706 0.3764706 0.3764706
+d 1
+Tr 1
+map_Ka lambert1.png
+map_Kd lambert1.png
+map_d lambert1.png
+newmtl mt_okl01
+Ka 0.972549 0.972549 0.972549
+Kd 0.7843137 0.7843137 0.7843137
+d 1
+Tr 1
+map_Ka mt_okl01.png
+map_Kd mt_okl01.png
+map_d mt_okl01.png
+newmtl mt_okl02
+Ka 0.972549 0.972549 0.972549
+Kd 0.7843137 0.7843137 0.7843137
+d 1
+Tr 1
+map_Ka mt_okl02.png
+map_Kd mt_okl02.png
+map_d mt_okl02.png
+newmtl mt_okl03
+Ka 0.972549 0.972549 0.972549
+Kd 0.7843137 0.7843137 0.7843137
+d 1
+Tr 1
+map_Ka mt_okl03.png
+map_Kd mt_okl03.png
+map_d mt_okl03.png
+newmtl mt_okl04
+Ka 0.972549 0.972549 0.972549
+Kd 0.7843137 0.7843137 0.7843137
+d 1
+Tr 1
+map_Ka mt_okl04.png
+map_Kd mt_okl04.png
+map_d mt_okl04.png
+newmtl mt_okl05
+Ka 0.972549 0.972549 0.972549
+Kd 0.7843137 0.7843137 0.7843137
+d 1
+Tr 1
+map_Ka mt_okl05.png
+map_Kd mt_okl05.png
+map_d mt_okl05.png
+newmtl mt_okl06
+Ka 0.7843137 0.7843137 0.7843137
+Kd 0.7843137 0.7843137 0.7843137
+d 1
+Tr 1
+map_Ka mt_okl06.png
+map_Kd mt_okl06.png
+map_d mt_okl06.png
+newmtl mt_okl07
+Ka 0.7843137 0.7843137 0.7843137
+Kd 0.7843137 0.7843137 0.7843137
+d 1
+Tr 1
+map_Ka mt_okl07.png
+map_Kd mt_okl07.png
+map_d mt_okl07.png
