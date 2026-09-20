@@ -26,7 +26,18 @@
 module PrismFontProbe
   module_function
 
-  ARQUIVO = "prism-font-probe.txt"
+  # O nome do arquivo carrega a versao do motor, de proposito. Com um nome fixo,
+  # uma rodada em que a sonda nao roda deixa o arquivo da rodada anterior no
+  # lugar, e a copia seguinte leva conteudo velho com nome novo. Ja aconteceu
+  # aqui e custou uma conclusao errada.
+  def nome_do_arquivo
+    versao = begin
+      System::VERSION.to_s
+    rescue StandardError
+      "motor-desconhecido"
+    end
+    "prism-font-probe-" + versao.gsub(/[^0-9A-Za-z._-]/, "-") + ".txt"
+  end
 
   TEXTOS = ["Agjpqy", "gjpqy", "ABCDEF", "Welcome to the world of Pokemon"]
 
@@ -90,6 +101,7 @@ module PrismFontProbe
   def rodar
     linhas = []
     linhas << "== Prism Font Probe =="
+    linhas << "rodado em: #{Time.now.strftime('%d/%m/%Y %H:%M:%S')}"
     begin
       linhas << "motor: #{System::VERSION}"
     rescue StandardError
@@ -112,9 +124,9 @@ module PrismFontProbe
       linhas << "erro na fonte padrao: #{e.class}: #{e.message}"
     end
 
-    File.open(ARQUIVO, "wb") { |f| f.write(linhas.join("\r\n")) }
+    File.open(nome_do_arquivo, "wb") { |f| f.write(linhas.join("\r\n")) }
   rescue StandardError => e
-    File.open(ARQUIVO, "wb") { |f| f.write("ERRO: #{e.class}: #{e.message}\r\n#{e.backtrace[0, 6].join("\r\n")}") }
+    File.open(nome_do_arquivo, "wb") { |f| f.write("ERRO: #{e.class}: #{e.message}\r\n#{e.backtrace[0, 6].join("\r\n")}") }
   end
 end
 
