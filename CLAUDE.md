@@ -239,12 +239,16 @@ ensaio é `Game/essentials-v21.1/Plugins/PrismTest3D/`, e sai quando o marco
 fechar. Falta o quarto critério, que é o cubo ficar atrás de um sprite e na
 frente de outro conforme o `z` do elemento.
 
-Duas coisas dessa etapa que valem saber sem abrir o documento:
+Três coisas dessa etapa que valem saber sem abrir o documento:
 
-- **nenhum build do mkxp-z 2.4.2 abre o Essentials v21.1 sem o conserto do
-  `iconv` que vai no patch.** O bug é deles, não nosso, e derruba o processo
-  antes de qualquer janela. O `Game.exe` que o kit traz é uma versão mais
-  antiga, por isso funciona;
+- **um bug só do mkxp-z derrubava três coisas ao mesmo tempo**: o jogo não
+  abria, o texto saía cortado e o som ficava mudo. O `uchardet` adivinha
+  `MAC-CENTRALEUROPE` para o `mkxp.json`, o `libiconv` recusa esse nome, e o
+  motor descartava a configuração inteira em silêncio, quando não caía direto.
+  O conserto está no patch e vale mandar para o projeto deles;
+- **o `mkxp.json` do Essentials do repositório ganhou `fontHeightReporting: 1`**,
+  e sem essa linha o texto do jogo sai cortado pela metade no nosso motor. O
+  porquê está na seção 1.2 do documento;
 - **para diagnosticar crash no Windows, log normal não serve.** O executável é
   do subsistema gráfico, então redirecionamento de cmd, console de debug e
   `freopen` em `stderr` saem todos vazios. O que funciona é rastro com

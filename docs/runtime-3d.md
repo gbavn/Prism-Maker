@@ -15,9 +15,10 @@ serve para outra coisa, e não substitui malha.
 
 ## 1. Onde paramos
 
-**O marco 1 rodou.** Dois cubos de malha de verdade, desenhados por OpenGL
-dentro do Pokémon Essentials v21.1, no mesmo quadro que o mapa 2D e a caixa de
-mensagem. Três dos quatro critérios estão provados:
+**O marco 1 rodou, com o jogo inteiro funcionando.** Dois cubos de malha de
+verdade, desenhados por OpenGL dentro do Pokémon Essentials v21.1, no mesmo
+quadro que o mapa 2D e a caixa de mensagem, com o texto correto e o som no
+lugar. Três dos quatro critérios estão provados:
 
 - o Essentials abre e funciona como antes;
 - os dois cubos aparecem com **oclusão correta por pixel**. O teste é a ordem
@@ -27,6 +28,22 @@ mensagem. Três dos quatro critérios estão provados:
 
 Falta o quarto: mudar o `z` do elemento e ver o cubo ficar atrás de um sprite e
 na frente de outro. Hoje o plugin de ensaio usa `z` 5000, por cima de tudo.
+
+Pendências conhecidas, em ordem de importância:
+
+1. **medir o custo do anexo de profundidade sozinho.** O usuário notou queda de
+   desempenho com dois cubos, que são 72 triângulos e não podem custar nada. Um
+   culpado já foi consertado: o `draw()` consultava o estado do OpenGL três
+   vezes por quadro, e cada consulta obriga a CPU a esperar a GPU. Falta saber
+   se o renderbuffer de profundidade anexado aos dois alvos da tela custa algo
+   **mesmo sem 3D na cena**, porque isso pesaria em todo projeto e não só
+   quando há objeto. Medir com `displayFPS` em três situações: executável do
+   kit, nosso sem o plugin de ensaio, e nosso com os cubos;
+2. **fixar as dependências por commit** no `windows/Makefile` do fork. Hoje o
+   build não é reproduzível, e foi exatamente isso que trouxe o `uchardet` que
+   quebrou tudo (seção 1.2);
+3. **mandar o conserto do `encoding.h` para o mkxp-z**, que é bug deles e não
+   tem relação com 3D.
 
 Feito e no `main` do Prism:
 
@@ -74,33 +91,74 @@ pode existir.
 
 ---
 
-## 1.2. Um bug do mkxp-z que não é nosso, e que bloqueava tudo
+## 1.2. O bug do mkxp-z que derrubava tudo, e não era nosso
 
-**Nenhum build do mkxp-z 2.4.2 abre o Essentials v21.1.** Não é o nosso patch:
-o build limpo, compilado da mesma base sem uma linha nossa, também cai. O que
-abre é o `Game.exe` do kit, que é uma versão mais antiga do motor.
+Um defeito só, no mkxp-z e não no patch, causou **três** sintomas que pareciam
+independentes e custaram muitas rodadas: o jogo não abrir, o texto sair cortado
+pela metade, e o som ficar mudo.
 
-A causa está em `src/util/encoding.h`:
+A cadeia, toda verificada no fonte e no rastro:
 
-```cpp
-iconv_t cd = iconv_open("UTF-8", charset);
-// sem checagem
-size_t result = iconv(cd, &inPtr, &inLen, &outPtr, &outLen);
+1. o `windows/Makefile` busca `uchardet` e `libiconv` com `git clone` sem tag
+   nem commit fixo (`:237` e `:255`), então um build de hoje usa bibliotecas
+   diferentes das de 2023, mesmo no mesmo commit do motor;
+2. `Config::read` passa o `mkxp.json` inteiro por `Encoding::convertString`
+   (`config.cpp:109`), que chama `uchardet` para adivinhar a codificação;
+3. o `uchardet` novo olha o arquivo, que é UTF-8 com comentários e a palavra
+   "Pokémon" acentuada, e responde **MAC-CENTRALEUROPE**;
+4. o `libiconv` não aceita esse nome, e `iconv_open` devolve `(iconv_t)-1`;
+5. em `encoding.h`, esse `-1` seguia direto para `iconv()`, que o trata como
+   ponteiro e o dereferencia. **Violação de acesso, sem mensagem, antes de
+   qualquer janela.**
+
+O primeiro conserto, lançar exceção em vez de dereferenciar, parou o crash e
+**não bastou**: em `config.cpp:107-117` a exceção é capturada e trocada por
+"segue com os valores padrão", então a configuração inteira do jogo sumia em
+silêncio. Daí os outros dois sintomas: o `fontHeightReporting` do kit nunca
+chegava ao motor, e o `midiSoundFont` também não.
+
+Pior: durante rodadas, testamos hipóteses de configuração com o interruptor
+desligado. Nenhuma edição do `mkxp.json` tinha efeito, e isso parecia refutar
+hipóteses que estavam certas.
+
+O conserto completo, em `encoding.h`, tem três partes:
+
+- texto já em UTF-8 válido não passa por adivinhação nenhuma. Além de resolver
+  o caso, é o certo: converter a partir de um palpite errado estraga o texto
+  **mesmo quando o `iconv` aceita o nome**, e o rastro mostra o `uchardet`
+  chutando `UTF-16BE` para várias strings curtas do jogo;
+- nome que o `iconv` recusa é tentado de novo sem traços nem sublinhados,
+  porque as duas bibliotecas escrevem o mesmo conjunto de jeitos diferentes;
+- se ainda falhar, devolve o texto como veio em vez de lançar exceção. Texto
+  sem converter é pior que texto convertido certo, e muito melhor que perder o
+  arquivo inteiro.
+
+**Vale mandar de volta para o mkxp-z.** Atinge qualquer pessoa que compile a
+versão atual, e não tem nada a ver com 3D.
+
+### O texto cortado, que era outro assunto
+
+Com a configuração voltando a funcionar, o corte se resolveu com uma linha. O
+motor passou a normalizar a altura relatada por `Bitmap#text_size` para
+`TTF_FontHeight`. Na fonte `power green`, em tamanho 27, isso devolve **20**,
+enquanto o glifo ocupa **32** pixels, 26 acima da linha base e 6 abaixo. Como o
+Essentials usa esse número como área de recorte:
+
+```ruby
+height = text_size(text).height
+draw_text(x, y, width, height, text, align)
 ```
 
-`iconv_open` devolve `(iconv_t)-1` quando não conhece a codificação que o
-`uchardet` adivinhou, e esse `-1` segue para `iconv()`, que o trata como
-ponteiro e o dereferencia. Violação de acesso dentro da `libiconv`, antes de
-qualquer janela.
+o texto sai cortado. A opção `fontHeightReporting: 1` devolve a altura medida,
+que é o que a versão do motor para a qual o kit foi feito fazia. Já está no
+`mkxp.json` do Essentials do repositório.
 
-O caminho é `Config::readGameINI`, que lê o `Title` do `Game.ini` e chama
-`Encoding::convertString`. Isso também explica uma diferença que confundiu o
-diagnóstico por várias rodadas: `readGameINI` procura um `.ini` com o **nome do
-executável**. Numa pasta onde o binário se chama `mkxp-z.exe` e não existe
-`mkxp-z.ini`, o trecho inteiro é pulado, e o programa vai muito mais longe.
-
-O conserto está no patch. **Vale mandar de volta para o mkxp-z**, porque
-atinge qualquer pessoa que compile a versão atual.
+Duas hipóteses foram descartadas por medição pelo caminho, e ficam registradas
+para ninguém repetir: `fontHinting` mexe na rasterização, não no tamanho que
+chega nela; e `legacyFontMetrics`, que acrescentamos para reproduzir a regra
+antiga de abrir a fonte a noventa por cento do tamanho pedido, muda o `ppem` de
+20 para 24 e **não** resolve o corte. A opção ficou no patch porque é barata e
+pode servir, mas não era isso.
 
 ---
 

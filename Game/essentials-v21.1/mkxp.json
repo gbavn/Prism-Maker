@@ -140,6 +140,18 @@
     //
     "subImageFix": true,
 
+    // Necessario para o motor do Prism, e inofensivo para o Game.exe original
+    // do kit, que ignora chave que nao conhece.
+    //
+    // A partir do commit que acrescentou esta opcao, o mkxp-z passou a
+    // normalizar a altura relatada por Bitmap#text_size para TTF_FontHeight.
+    // Na fonte "power green", em tamanho 27, isso devolve 20, enquanto o glifo
+    // ocupa 32 pixels (26 acima da linha base e 6 abaixo). Como o Essentials
+    // usa esse numero como area de recorte, o texto sai cortado pela metade. O
+    // valor 1 devolve a altura realmente medida, que e o que a versao do motor
+    // para a qual o kit foi feito fazia.
+    "fontHeightReporting": 1,
+
     // Sync screen redraws to the monitor refresh rate, to reduce screen
     // tearing.
     //

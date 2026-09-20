@@ -1,5 +1,0 @@
-Name          = Prism Font Probe
-Version       = 0.1.0
-Essentials    = 21.1
-Website       = https://github.com/gbavn/Prism-Maker
-Credits       = Prism
