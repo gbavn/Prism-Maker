@@ -98,6 +98,26 @@ module PrismTest3D
   # Desliga as caixas do caminhao, para olhar so o laboratorio.
   DESENHAR_CAMINHAO = false
 
+  # Erro aqui nao pode derrubar o jogo, e precisa deixar rastro.
+  #
+  # O Essentials mostra excecao de plugin numa caixa e fecha, o que numa
+  # sessao de teste vira "o jogo fechou e nao sei por que". Gravar em arquivo
+  # resolve: o motivo fica em disco mesmo quando a janela ja sumiu.
+  def protegido(onde)
+    yield
+  rescue StandardError => e
+    return if @ja_avisei
+    @ja_avisei = true
+    begin
+      File.open("prism3d-erro.txt", "wb") do |f|
+        f.write("erro em #{onde}: #{e.class}: #{e.message}\r\n")
+        f.write(e.backtrace[0, 8].join("\r\n")) if e.backtrace
+      end
+    rescue StandardError
+      # Se nem gravar der, nao ha mais o que fazer aqui.
+    end
+  end
+
   def running?
     defined?(Prism3D) ? true : false
   end
@@ -201,12 +221,12 @@ end
 
 EventHandlers.add(:on_new_spriteset_map, :prism_test_3d,
   proc { |_spriteset, _viewport|
-    PrismTest3D.start
+    PrismTest3D.protegido("start") { PrismTest3D.start }
   }
 )
 
 EventHandlers.add(:on_frame_update, :prism_test_3d,
   proc {
-    PrismTest3D.update
+    PrismTest3D.protegido("update") { PrismTest3D.update }
   }
 )

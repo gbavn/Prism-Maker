@@ -56,10 +56,10 @@ index 933a72d..f2785b0 100644
  if steamworks == true
 diff --git a/binding/prism3d-binding.cpp b/binding/prism3d-binding.cpp
 new file mode 100644
-index 0000000..13f5801
+index 0000000..93d813b
 --- /dev/null
 +++ b/binding/prism3d-binding.cpp
-@@ -0,0 +1,286 @@
+@@ -0,0 +1,311 @@
 +/*
 +** prism3d-binding.cpp
 +**
@@ -84,6 +84,9 @@ index 0000000..13f5801
 +
 +#include "binding-util.h"
 +#include "debugwriter.h"
++#include "prism-trace.h"
++#include "exception.h"
++#include <string>
 +#include "graphics.h"
 +#include "prism3d.h"
 +#include "sharedstate.h"
@@ -102,6 +105,8 @@ index 0000000..13f5801
 +
 +    int z = 0;
 +    rb_get_args(argc, argv, "|i", &z RB_ARG_END);
++
++    prismTrace("BINDING: start");
 +
 +    GFX_LOCK;
 +    if (!element) {
@@ -214,9 +219,29 @@ index 0000000..13f5801
 +    double unitsPerTile = 16.0;
 +    rb_get_args(argc, argv, "z|f", &path, &unitsPerTile RB_ARG_END);
 +
++    prismTrace((std::string("BINDING: load_model ") + path).c_str());
++
++    /*
++     * A fronteira com o Ruby nao pode deixar excecao de C++ passar: o
++     * interpretador nao sabe o que fazer com ela e o processo cai sem
++     * mensagem. Carregar modelo mexe com arquivo, e arquivo falha de muitos
++     * jeitos, entao aqui vira nil e o jogo segue sem o objeto.
++     */
++    int id = -1;
 +    GFX_LOCK;
-+    const int id = needElement()->renderer().loadMesh(path, (float)unitsPerTile);
++    try {
++        id = needElement()->renderer().loadMesh(path, (float)unitsPerTile);
++    } catch (const Exception &e) {
++        prismTrace((std::string("BINDING: load_model falhou: ") + e.msg).c_str());
++        id = -1;
++    } catch (...) {
++        prismTrace("BINDING: load_model falhou por motivo desconhecido");
++        id = -1;
++    }
 +    GFX_UNLOCK;
++
++    prismTrace(id < 0 ? "BINDING: load_model devolveu nil"
++                      : "BINDING: load_model devolveu um indice");
 +
 +    return id < 0 ? Qnil : rb_fix_new(id);
 +}
@@ -1068,10 +1093,10 @@ index 0000000..09ea23b
 +#endif // PRISM3D_MATH_H
 diff --git a/src/display/gl/prism3d.cpp b/src/display/gl/prism3d.cpp
 new file mode 100644
-index 0000000..0d2aa79
+index 0000000..e119d89
 --- /dev/null
 +++ b/src/display/gl/prism3d.cpp
-@@ -0,0 +1,807 @@
+@@ -0,0 +1,812 @@
 +/*
 +** prism3d.cpp
 +**
@@ -1197,6 +1222,7 @@ index 0000000..0d2aa79
 +        char log[1024] = {};
 +        gl.GetShaderInfoLog(shader, sizeof(log) - 1, 0, log);
 +        std::fprintf(stderr, "Prism3D: shader nao compilou: %s\n", log);
++        prismTrace((std::string("SHADER nao compilou: ") + log).c_str());
 +        gl.DeleteShader(shader);
 +        return 0;
 +    }
@@ -1354,6 +1380,8 @@ index 0000000..0d2aa79
 +}
 +
 +bool Mesh::load(const std::string &path, float unitsPerTile) {
++    prismTrace((std::string("OBJ: comecando ") + path).c_str());
++
 +    std::string texto;
 +    if (!readWholeFile(path, texto))
 +        return false;
@@ -1606,6 +1634,7 @@ index 0000000..0d2aa79
 +        char log[1024] = {};
 +        gl.GetProgramInfoLog(program, sizeof(log) - 1, 0, log);
 +        std::fprintf(stderr, "Prism3D: programa nao ligou: %s\n", log);
++        prismTrace((std::string("SHADER nao ligou: ") + log).c_str());
 +        gl.DeleteProgram(program);
 +        program = 0;
 +        return false;
@@ -1694,6 +1723,7 @@ index 0000000..0d2aa79
 +    vao.ibo = ibo;
 +    GLMeta::vaoInit(vao);
 +
++    prismTrace("RENDER: shader e cubo prontos");
 +    return true;
 +}
 +
