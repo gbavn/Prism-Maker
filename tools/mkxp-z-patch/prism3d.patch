@@ -56,10 +56,10 @@ index 933a72d..f2785b0 100644
  if steamworks == true
 diff --git a/binding/prism3d-binding.cpp b/binding/prism3d-binding.cpp
 new file mode 100644
-index 0000000..d529f20
+index 0000000..dc0b660
 --- /dev/null
 +++ b/binding/prism3d-binding.cpp
-@@ -0,0 +1,205 @@
+@@ -0,0 +1,234 @@
 +/*
 +** prism3d-binding.cpp
 +**
@@ -141,6 +141,34 @@ index 0000000..d529f20
 +    needElement()->renderer().setCamera(Prism3D::Vec3((float)ex, (float)ey, (float)ez),
 +                                        Prism3D::Vec3((float)ax, (float)ay, (float)az),
 +                                        (float)fov);
++    GFX_UNLOCK;
++
++    return Qnil;
++}
++
++/*
++ * A camera do mapa.
++ *
++ *   Prism3D.map_camera(rolagem_x, rolagem_z, tile = 32, altura = 1.0)
++ *
++ * A rolagem vem em tiles, e e o canto superior esquerdo visivel. No Essentials
++ * ela sai assim:
++ *
++ *   Prism3D.map_camera($game_map.display_x / 128.0, $game_map.display_y / 128.0)
++ *
++ * porque o display_x do RPG Maker conta em quartos de pixel: 32 pixels por
++ * tile vezes 4 da 128.
++ */
++RB_METHOD(prism3DMapCamera) {
++    RB_UNUSED_PARAM;
++
++    double scrollX, scrollZ;
++    double tile = 32.0, height = 1.0;
++    rb_get_args(argc, argv, "ff|ff", &scrollX, &scrollZ, &tile, &height RB_ARG_END);
++
++    GFX_LOCK;
++    needElement()->renderer().setMapCamera((float)scrollX, (float)scrollZ,
++                                           (float)tile, (float)height);
 +    GFX_UNLOCK;
 +
 +    return Qnil;
@@ -256,6 +284,7 @@ index 0000000..d529f20
 +    _rb_define_module_function(module, "start", prism3DStart);
 +    _rb_define_module_function(module, "stop", prism3DStop);
 +    _rb_define_module_function(module, "camera", prism3DCamera);
++    _rb_define_module_function(module, "map_camera", prism3DMapCamera);
 +    _rb_define_module_function(module, "add_box", prism3DAddBox);
 +    _rb_define_module_function(module, "clear", prism3DClear);
 +    _rb_define_module_function(module, "count", prism3DCount);
@@ -758,10 +787,10 @@ index 099edb9..ecb7825 100644
  template<GLenum target>
 diff --git a/src/display/gl/prism3d-math.h b/src/display/gl/prism3d-math.h
 new file mode 100644
-index 0000000..2d0f440
+index 0000000..09ea23b
 --- /dev/null
 +++ b/src/display/gl/prism3d-math.h
-@@ -0,0 +1,164 @@
+@@ -0,0 +1,216 @@
 +/*
 +** prism3d-math.h
 +**
@@ -892,6 +921,58 @@ index 0000000..2d0f440
 +        return out;
 +    }
 +
++    /**
++     * A projecao do mapa: obliqua, com o chao 1 para 1 com a tela.
++     *
++     * O mapa do RPG Maker nao tem fuga de ponto e nao comprime nada: um tile e
++     * um quadrado de 32 por 32 pixels na tela, venha ele do topo ou do rodape
++     * do mapa. Camera de verdade a 45 graus comprimiria a profundidade por
++     * cos(45), e objetos ao sul iriam subindo em relacao aos tiles em que
++     * pisam. Por isso aqui nao ha camera girada: ha cisalhamento.
++     *
++     * O mundo esta em tiles, com x para leste, z para o sul e y para cima. A
++     * conta e esta:
++     *
++     *     tela_x = x - rolagemX
++     *     tela_y = (z - rolagemZ) - y * alturaNaTela
++     *
++     * Com `alturaNaTela` igual a 1, um tile de altura sobe 32 pixels, que e a
++     * convencao dos tiles altos do RPG Maker. Valores menores achatam o
++     * objeto, como se a camera estivesse mais alta.
++     *
++     * A profundidade acompanha a direcao de projecao, que e (0, 1, alturaNaTela):
++     * quanto mais ao sul e mais alto, mais perto do observador. `alcance` e a
++     * profundidade total em tiles, e so precisa ser maior que o mapa.
++     */
++    static Mat4 mapOblique(float tilesWide, float tilesHigh,
++                           float scrollX, float scrollZ,
++                           float heightOnScreen, float range) {
++        Mat4 out = {};
++
++        const float sx = 2.0f / tilesWide;
++        const float sy = 2.0f / tilesHigh;
++
++        /*
++         * Coluna-maior: m[coluna * 4 + linha]. As tres linhas sao
++         *
++         *   x = sx * (x - rolagemX) - 1
++         *   y = 1 - sy * ((z - rolagemZ) - altura * y)
++         *   z = -(y + altura * (z - rolagemZ)) / alcance
++         */
++        out.m[0]  = sx;                 /* linha 0, coluna x */
++        out.m[5]  = sy * heightOnScreen;/* linha 1, coluna y */
++        out.m[9]  = -sy;                /* linha 1, coluna z */
++        out.m[6]  = -1.0f / range;      /* linha 2, coluna y */
++        out.m[10] = -heightOnScreen / range;
++
++        out.m[12] = -1.0f - sx * scrollX;
++        out.m[13] = 1.0f + sy * scrollZ;
++        out.m[14] = heightOnScreen * scrollZ / range;
++        out.m[15] = 1.0f;
++
++        return out;
++    }
++
 +    /** Camera olhando de `eye` para `target`, com `up` definindo a inclinacao. */
 +    static Mat4 lookAt(const Vec3 &eye, const Vec3 &target, const Vec3 &up) {
 +        const Vec3 forward = normalize(target - eye);
@@ -928,10 +1009,10 @@ index 0000000..2d0f440
 +#endif // PRISM3D_MATH_H
 diff --git a/src/display/gl/prism3d.cpp b/src/display/gl/prism3d.cpp
 new file mode 100644
-index 0000000..2053c62
+index 0000000..49c7def
 --- /dev/null
 +++ b/src/display/gl/prism3d.cpp
-@@ -0,0 +1,328 @@
+@@ -0,0 +1,352 @@
 +/*
 +** prism3d.cpp
 +**
@@ -1163,6 +1244,16 @@ index 0000000..2053c62
 +    target = newTarget;
 +    fov = fovDegrees;
 +    view = Mat4::lookAt(eye, target, Vec3(0, 1, 0));
++    mapCamera = false;
++}
++
++void Renderer::setMapCamera(float scrollX, float scrollZ, float tilePixels,
++                            float heightOnScreen) {
++    mapScrollX = scrollX;
++    mapScrollZ = scrollZ;
++    mapTilePixels = tilePixels > 0.0f ? tilePixels : 32.0f;
++    mapHeight = heightOnScreen;
++    mapCamera = true;
 +}
 +
 +void Renderer::draw(int width, int height, bool clearDepth) {
@@ -1212,10 +1303,24 @@ index 0000000..2053c62
 +    gl.FrontFace(GL_CCW);
 +    glState.blend.pushSet(false);
 +
-+    const float aspect = height > 0 ? (float)width / (float)height : 1.0f;
-+    const Mat4 projection =
-+        Mat4::perspective(fov * 3.14159265f / 180.0f, aspect, 0.1f, 200.0f);
-+    const Mat4 viewProjection = projection * view;
++    Mat4 viewProjection;
++
++    if (mapCamera)
++    {
++        /* Alcance folgado: o maior mapa do RPG Maker XP tem 500 tiles de
++           lado, e a profundidade so precisa caber nele. */
++        viewProjection = Mat4::mapOblique((float)width / mapTilePixels,
++                                          (float)height / mapTilePixels,
++                                          mapScrollX, mapScrollZ,
++                                          mapHeight, 1024.0f);
++    }
++    else
++    {
++        const float aspect = height > 0 ? (float)width / (float)height : 1.0f;
++        const Mat4 projection =
++            Mat4::perspective(fov * 3.14159265f / 180.0f, aspect, 0.1f, 200.0f);
++        viewProjection = projection * view;
++    }
 +
 +    glState.program.pushSet(program);
 +    gl.UniformMatrix4fv(uniformViewProjection, 1, GL_FALSE, viewProjection.m);
@@ -1262,10 +1367,10 @@ index 0000000..2053c62
 +} // namespace Prism3D
 diff --git a/src/display/gl/prism3d.h b/src/display/gl/prism3d.h
 new file mode 100644
-index 0000000..4565b07
+index 0000000..9ded223
 --- /dev/null
 +++ b/src/display/gl/prism3d.h
-@@ -0,0 +1,123 @@
+@@ -0,0 +1,138 @@
 +/*
 +** prism3d.h
 +**
@@ -1326,6 +1431,18 @@ index 0000000..4565b07
 +    void setCamera(const Vec3 &eye, const Vec3 &target, float fovDegrees);
 +
 +    /**
++     * Passa a desenhar com a projecao do mapa, em vez da camera livre.
++     *
++     * `scrollX` e `scrollZ` sao o canto superior esquerdo visivel do mapa, em
++     * tiles. `tilePixels` e o tamanho do tile na tela, 32 no RPG Maker XP, e
++     * serve para descobrir quantos tiles cabem no alvo. `heightOnScreen` diz
++     * quanto um tile de altura sobe na tela: 1 e a convencao dos tiles altos
++     * do RPG Maker, valores menores achatam.
++     */
++    void setMapCamera(float scrollX, float scrollZ, float tilePixels,
++                      float heightOnScreen);
++
++    /**
 +     * Desenha, dentro do ciclo de desenho do motor.
 +     *
 +     * `width` e `height` sao os do alvo corrente, so para a proporcao da
@@ -1353,6 +1470,9 @@ index 0000000..4565b07
 +    int uniformColor = -1;
 +
 +    Mat4 view = Mat4::identity();
++    bool mapCamera = false;
++    float mapScrollX = 0.0f, mapScrollZ = 0.0f;
++    float mapTilePixels = 32.0f, mapHeight = 1.0f;
 +    float fov = 45.0f;
 +    Vec3 eye = Vec3(0, 3, 8);
 +    Vec3 target = Vec3(0, 0, 0);
