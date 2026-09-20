@@ -5,15 +5,20 @@
 # plugin com o Game.exe original do kit e com o nosso, a diferenca nos numeros
 # diz de quem e o texto cortado.
 #
-# O Essentials desenha texto pedindo a altura ao motor e usando esse numero
-# como area de recorte:
+# Duas licoes da primeira versao desta sonda, que media errado:
 #
-#   height = text_size(text).height
-#   mkxp_draw_text(x, y, width, height, text, align)
+# 1. medir com a fonte que o jogo usa, e nao com a Arial padrao do RGSS. A
+#    fonte vem do proprio kit, por pbSetSystemFont, que e a funcao que o
+#    Essentials chama antes de escrever qualquer coisa;
+# 2. pintar no retangulo do tamanho que o jogo usa. A primeira versao pintava
+#    num bitmap alto demais, entao nada cortava e todo caso dava "cabe". O
+#    Essentials faz assim:
 #
-# Entao se text_size devolver altura menor que a do glifo, o texto corta. Esta
-# sonda mede exatamente isso: a altura que o motor promete contra a altura que
-# ele realmente pinta, contada em pixels que sairam do preto.
+#      height = text_size(text).height
+#      draw_text(x, y, width, height, text, align)
+#
+#    ou seja, o retangulo tem exatamente a altura prometida. Se o glifo for
+#    mais alto que isso, corta, e e esse o teste.
 #
 # Codigo de investigacao, sai quando o assunto fechar.
 #===============================================================================
@@ -23,21 +28,10 @@ module PrismFontProbe
 
   ARQUIVO = "prism-font-probe.txt"
 
-  TEXTOS = [
-    "Agjpqy",
-    "gjpqy",
-    "ABCDEF",
-    "Welcome to the world of Pokemon",
-    "Pokemon"
-  ]
+  TEXTOS = ["Agjpqy", "gjpqy", "ABCDEF", "Welcome to the world of Pokemon"]
 
-  # Pinta o texto num bitmap bem mais alto que o necessario e conta a primeira
-  # e a ultima linha com pixel opaco. Isso da a altura que o motor de fato
-  # desenhou, sem depender de olhar a tela.
-  def altura_pintada(bitmap, texto)
-    bitmap.clear
-    bitmap.draw_text(0, 0, bitmap.width, bitmap.height, texto)
-
+  # Conta a primeira e a ultima linha com pixel opaco.
+  def faixa_pintada(bitmap)
     primeira = nil
     ultima = nil
     y = 0
@@ -49,7 +43,7 @@ module PrismFontProbe
           achou = true
           break
         end
-        x += 4
+        x += 2
       end
       if achou
         primeira = y if primeira.nil?
@@ -57,9 +51,40 @@ module PrismFontProbe
       end
       y += 1
     end
-
-    return [0, 0, 0] if primeira.nil?
+    return [nil, nil, 0] if primeira.nil?
     [primeira, ultima, ultima - primeira + 1]
+  end
+
+  def medir(linhas, rotulo, preparar)
+    # Folga generosa: aqui queremos a altura real do glifo, sem recorte.
+    solto = Bitmap.new(700, 120)
+    preparar.call(solto)
+    linhas << ""
+    linhas << "-- #{rotulo}: #{solto.font.name.inspect} tamanho #{solto.font.size}"
+
+    TEXTOS.each do |texto|
+      medida = solto.text_size(texto)
+
+      solto.clear
+      solto.draw_text(0, 0, solto.width, solto.height, texto)
+      _topo, _base, altura_livre = faixa_pintada(solto)
+
+      # Agora do jeito do jogo: retangulo com a altura prometida.
+      apertado = Bitmap.new(700, medida.height)
+      preparar.call(apertado)
+      apertado.draw_text(0, 0, apertado.width, apertado.height, texto)
+      _t2, _b2, altura_apertada = faixa_pintada(apertado)
+      apertado.dispose
+
+      perdido = altura_livre - altura_apertada
+      veredito = (perdido > 0) ? "CORTA #{perdido} px" : "inteiro"
+
+      linhas << format("  %-34s promete %3d x %2d | solto pinta %2d | apertado pinta %2d | %s",
+                       texto.inspect, medida.width, medida.height,
+                       altura_livre, altura_apertada, veredito)
+    end
+
+    solto.dispose
   end
 
   def rodar
@@ -71,43 +96,28 @@ module PrismFontProbe
       linhas << "motor: nao informado"
     end
 
-    fontes = []
-    fontes << ["padrao", Font.default_name, Font.default_size]
+    # A fonte do jogo, pela propria funcao do kit.
     begin
-      fontes << ["mensagem", MessageConfig.pbGetSystemFontName,
-                 MessageConfig.pbGetSystemFontSize]
-    rescue StandardError
-      # Essentials pode nao expor isso; a fonte padrao ja basta.
+      linhas << "fonte de sistema do kit: #{MessageConfig.pbGetSystemFontName.inspect}"
+      linhas << "tamanho: #{MessageConfig::FONT_SIZE}"
+      medir(linhas, "fonte do jogo", proc { |b| pbSetSystemFont(b) })
+    rescue StandardError => e
+      linhas << "NAO CONSEGUI USAR A FONTE DO JOGO: #{e.class}: #{e.message}"
     end
 
-    fontes.each do |rotulo, nome, tamanho|
-      bitmap = Bitmap.new(640, 96)
-      bitmap.font.name = nome if nome
-      bitmap.font.size = tamanho if tamanho
-
-      linhas << ""
-      linhas << "-- fonte #{rotulo}: #{nome.inspect} tamanho #{bitmap.font.size}"
-
-      TEXTOS.each do |texto|
-        medida = bitmap.text_size(texto)
-        topo, base, alto = altura_pintada(bitmap, texto)
-        veredito = (alto > medida.height) ? "CORTA" : "cabe"
-        linhas << format("  %-34s promete %2d x %2d | pinta de y=%2d a y=%2d, altura %2d | %s",
-                         texto.inspect, medida.width, medida.height,
-                         topo, base, alto, veredito)
-      end
-
-      bitmap.dispose
+    # A padrao, so para comparacao.
+    begin
+      medir(linhas, "fonte padrao do RGSS", proc { |b| })
+    rescue StandardError => e
+      linhas << "erro na fonte padrao: #{e.class}: #{e.message}"
     end
 
     File.open(ARQUIVO, "wb") { |f| f.write(linhas.join("\r\n")) }
   rescue StandardError => e
-    File.open(ARQUIVO, "wb") { |f| f.write("ERRO: #{e.class}: #{e.message}") }
+    File.open(ARQUIVO, "wb") { |f| f.write("ERRO: #{e.class}: #{e.message}\r\n#{e.backtrace[0, 6].join("\r\n")}") }
   end
 end
 
-# Roda uma vez, no primeiro quadro em que ja existe mapa, para garantir que o
-# Graphics esteja de pe.
 EventHandlers.add(:on_frame_update, :prism_font_probe,
   proc {
     next if $prism_font_probe_feito
