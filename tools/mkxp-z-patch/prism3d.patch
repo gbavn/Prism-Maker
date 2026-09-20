@@ -347,7 +347,7 @@ index 0000000..13f5801
 +    _rb_define_module_function(module, "depth_test=", prism3DSetDepth);
 +}
 diff --git a/macos/mkxp-z.xcodeproj/project.pbxproj b/macos/mkxp-z.xcodeproj/project.pbxproj
-index 106b790..c730f72 100644
+index 106b790..5408983 100644
 --- a/macos/mkxp-z.xcodeproj/project.pbxproj
 +++ b/macos/mkxp-z.xcodeproj/project.pbxproj
 @@ -7,6 +7,18 @@
@@ -388,12 +388,19 @@ index 106b790..c730f72 100644
  		3B10EDEA2568E96A00372D13 /* plane-binding.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = "plane-binding.cpp"; sourceTree = "<group>"; };
  		3B10EDEB2568E96A00372D13 /* binding-types.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = "binding-types.h"; sourceTree = "<group>"; };
  		3B10EDEC2568E96A00372D13 /* font-binding.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = "font-binding.cpp"; sourceTree = "<group>"; };
-@@ -1598,6 +1615,10 @@
+@@ -1478,6 +1495,7 @@
+ 				3B012198261544A0001E574A /* string-util.h */,
+ 				3B10ED402568E95D00372D13 /* util.h */,
+ 				3B10EE1F2569348E00372D13 /* json5pp.hpp */,
++				3D00000000000000000000A5 /* prism-trace.cpp */,
+ 				968CB90E288E46F4008BC75D /* rapidcsv.h */,
+ 			);
+ 			path = util;
+@@ -1598,6 +1616,9 @@
  				3B10ED862568E95E00372D13 /* gl-debug.h */,
  				3B10ED872568E95E00372D13 /* gl-fun.h */,
  				3B10ED882568E95E00372D13 /* gl-meta.cpp */,
 +				3D00000000000000000000A1 /* prism3d.cpp */,
-+				3D00000000000000000000A5 /* prism-trace.cpp */,
 +				3D00000000000000000000A2 /* prism3d.h */,
 +				3D00000000000000000000A3 /* prism3d-math.h */,
  				3B10ED892568E95E00372D13 /* tileatlasvx.cpp */,
