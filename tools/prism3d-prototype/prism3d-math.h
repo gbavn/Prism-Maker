@@ -98,26 +98,33 @@ struct Mat4 {
      *
      * E o intervalo do OpenGL de desktop e do GLES, que e onde o mkxp-z roda.
      */
-    static Mat4 perspective(float fovYRadians, float aspect, float near, float far) {
+    /*
+     * Os planos se chamam nearPlane e farPlane, e nao near e far, porque no
+     * Windows `near` e `far` sao MACROS do windef.h, herdadas da era dos
+     * ponteiros segmentados de 16 bits, e expandem para nada. Com os nomes
+     * curtos, `(far + near)` vira `( + )` e o compilador para ali. Fora do
+     * Windows nao faria diferenca, mas o alvo aqui e justamente o Windows.
+     */
+    static Mat4 perspective(float fovYRadians, float aspect, float nearPlane, float farPlane) {
         Mat4 out = {};
         const float f = 1.0f / std::tan(fovYRadians / 2.0f);
         out.m[0] = f / aspect;
         out.m[5] = f;
-        out.m[10] = (far + near) / (near - far);
+        out.m[10] = (farPlane + nearPlane) / (nearPlane - farPlane);
         out.m[11] = -1.0f;
-        out.m[14] = (2.0f * far * near) / (near - far);
+        out.m[14] = (2.0f * farPlane * nearPlane) / (nearPlane - farPlane);
         return out;
     }
 
     static Mat4 orthographic(float left, float right, float bottom, float top,
-                             float near, float far) {
+                             float nearPlane, float farPlane) {
         Mat4 out = identity();
         out.m[0] = 2.0f / (right - left);
         out.m[5] = 2.0f / (top - bottom);
-        out.m[10] = -2.0f / (far - near);
+        out.m[10] = -2.0f / (farPlane - nearPlane);
         out.m[12] = -(right + left) / (right - left);
         out.m[13] = -(top + bottom) / (top - bottom);
-        out.m[14] = -(far + near) / (far - near);
+        out.m[14] = -(farPlane + nearPlane) / (farPlane - nearPlane);
         return out;
     }
 

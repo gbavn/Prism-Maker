@@ -80,6 +80,23 @@ Duas escolhas que fogem do plano original de `docs/runtime-3d.md`, e por quê:
 restauradas na mão dentro do `draw()`, em vez de virarem propriedade do cache
 do motor. É menos invasivo e some quando decidirmos formalizar.
 
+## Duas armadilhas de plataforma, já pagas
+
+As duas apareceram na primeira rodada de CI e estão consertadas no patch. Ficam
+registradas porque nenhuma das duas aparece compilando no Linux.
+
+**No Windows, `near` e `far` são macros.** O `windef.h` as define, vazias,
+herança dos ponteiros segmentados de 16 bits. Uma função de projeção com
+parâmetros chamados `near` e `far` vira `( + ) / ( - )` depois do
+pré-processador, e o compilador para ali. Por isso os planos se chamam
+`nearPlane` e `farPlane`.
+
+**O build do macOS não usa o meson.** Ele usa `macos/mkxp-z.xcodeproj`, com a
+lista de fontes escrita à mão no `project.pbxproj`. Acrescentar arquivo ao
+`meson.build` não basta: o Mac compila sem eles e quebra no link, com
+`Undefined symbols: prism3DBindingInit()`. O patch registra os arquivos novos
+nas quatro fases de Sources do projeto.
+
 ## Compilar
 
 **Não compilar localmente.** O `linux/Makefile` deles constrói as dependências
