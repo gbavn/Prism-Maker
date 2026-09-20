@@ -58,7 +58,7 @@ nomes.
 
 ---
 
-## 1.1. As quatro armadilhas que custaram rodadas de CI
+## 1.1. As cinco armadilhas que custaram rodadas de CI
 
 Nenhuma delas aparece compilando no Linux, que é onde a verificação local
 acontece. Ficam registradas para não custarem uma segunda vez.
@@ -88,6 +88,27 @@ o processo com violação de acesso, sem mensagem. O patch acrescenta doze
 funções, e cada uma seria um jeito de cair em silêncio. Todas são conferidas
 de uma vez em `initGLFunctions`, e a bandeira `gl.prism3D` diz se o passo 3D
 pode existir.
+
+**`openReadRaw` com `freeOnClose` pede um `SDL_RWops` de heap.** A assinatura é
+`openReadRaw(SDL_RWops &ops, const char *nome, bool freeOnClose)`. Com o último
+argumento em true, o motor instala `SDL_RWopsCloseFree` como fechamento
+(`filesystem.cpp:248-261`), e essa função chama `SDL_FreeRW` no ponteiro
+(`filesystem.cpp:207`). Se o `SDL_RWops` foi declarado na pilha, o
+`SDL_RWclose` manda o alocador liberar um endereço de pilha. O único lugar do
+kit que passa true é o `font.cpp:602`, e lá o objeto vem de `SDL_AllocRW`: é
+esse o contrato. Objeto na pilha pede `false`.
+
+O que torna essa armadilha cara é o silêncio. Liberar ponteiro inválido no
+Windows pode virar `__fastfail`, corrupção de heap ou parâmetro inválido de
+CRT, conforme o alocador do build, e `RaiseFailFastException` passa por fora de
+handler encadeado e vetorizado. Ou seja: o processo some sem exceção, sem caixa
+de erro, sem minidump e sem linha do `SetUnhandledExceptionFilter`. O rastro em
+arquivo da seção 1.3 foi a única testemunha, e foi ele que apontou o lugar.
+
+Vale a mesma ressalva: não é garantido que tenha sido `__fastfail`. Provar
+exigiria o código de saída ou um dump, e nenhum dos dois existe quando o
+processo morre por esse caminho. Para isso, o instrumento certo é o
+`LocalDumps` do Windows Error Reporting, que grava o dump de fora do processo.
 
 ---
 
