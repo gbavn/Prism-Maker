@@ -48,7 +48,7 @@ module PrismTest3D
   # a camera esta certa. Se deslizarem, a conversao de rolagem esta errada. E
   # um teste que responde sozinho, sem depender de olhar o objeto inteiro e
   # achar que parece certo.
-  GRADE = true
+  GRADE = false
   GRADE_RAIO = 3
 
   # Placa desenhada na celula do proprio jogador, todo quadro.
@@ -59,6 +59,18 @@ module PrismTest3D
   # e o fator diz quanto. Atrasar so enquanto anda e encaixar ao parar acusa a
   # fase. Errar por um valor fixo acusa a origem.
   PLACA_DO_JOGADOR = true
+
+  # Linhas finas assentadas nas emendas entre tiles.
+  #
+  # Placa quadrada em cima de mapa desenhado e ruim de julgar: a placa e o
+  # desenho mexem juntos e o desvio fica escondido no meio do quadradinho.
+  # Emenda nao tem meio termo. A linha vai em Z inteiro, que e exatamente onde
+  # uma fileira de tiles acaba e a outra comeca, entao ou ela cai em cima do
+  # corte do desenho, e a camera esta certa, ou ela invade o meio da fileira, e
+  # o quanto invadiu e a medida do erro.
+  LINHAS = true
+  LINHAS_RAIO = 4
+  LINHAS_COMPRIMENTO = 20
 
   # Numeros em disco, uma linha a cada tantos quadros.
   #
@@ -232,6 +244,24 @@ module PrismTest3D
                           0.92, 0.04, 0.92, 0.0,
                           tom, tom * 0.4, tom * 0.9)
         end
+      end
+    end
+
+    if LINHAS && $game_player
+      centro_x = $game_player.x
+      centro_z = $game_player.y
+
+      (-LINHAS_RAIO..LINHAS_RAIO).each do |i|
+        # Horizontal: assentada na emenda de baixo da fileira centro_z + i,
+        # que em coordenada de mundo e o inteiro centro_z + i + 1.
+        Prism3D.add_box(centro_x + 0.5, 0.06, centro_z + i + 1.0,
+                        LINHAS_COMPRIMENTO, 0.04, 0.08, 0.0,
+                        0.2, 1.0, 0.4)
+
+        # Vertical, na emenda da direita da coluna centro_x + i.
+        Prism3D.add_box(centro_x + i + 1.0, 0.06, centro_z + 0.5,
+                        0.08, 0.04, LINHAS_COMPRIMENTO, 0.0,
+                        1.0, 0.3, 0.9)
       end
     end
 
