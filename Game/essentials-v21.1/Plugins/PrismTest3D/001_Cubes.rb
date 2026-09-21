@@ -61,10 +61,33 @@ module PrismTest3D
   #
   # CHAO liga a captura do mapa ja composto e o redesenho como plano. Ela so
   # funciona com o elemento entre o tile de chao e o resto, que e o CHAO_Z.
+  # Os numeros sao os do proprio DS, da decompilacao do Platinum, em
+  # `src/overlay005/field_camera.c`, array `sCameraTypes`, entrada padrao:
+  #
+  #   fovY       8.0914306640625 graus, que la e MEIO-angulo
+  #   angulo    -59.051513671875 graus, a partir do horizonte
+  #   distancia  666.922119140625, com 16 unidades por tile, logo 41,68 tiles
+  #
+  # Duas conferencias que validam a leitura. O fovY ser meio-angulo sai de
+  # 666,92 x tan(8,09) x 2 = 189,7 unidades, ou 11,86 tiles, contra os 12 que
+  # cabem nos 192 pixels da tela do DS. E o angulo ser a partir do horizonte
+  # sai do HALL_OF_ORIGIN, que e uma plataforma vista quase de cima e tem 78,4.
+  #
+  # E nas 17 cameras do jogo `distancia x tan(fovY)` da sempre 96 unidades, que
+  # sao 6 tiles, meia tela. Ou seja eles mantem a altura visivel fixa e usam o
+  # campo de visao so para variar a forca da perspectiva. E a mesma regra que o
+  # `mapViewProjection` daqui ja usava, entao so faltava o numero.
   PERSPECTIVA = true
-  PITCH = 65.0
-  FOV = 20.0
+  PITCH = 59.05
+  FOV = 16.18
   CHAO = true
+
+  # Os sprites 2D posicionados pela camera 3D.
+  #
+  # Com 59 graus o chao comprime na vertical em sin(59), que da 0,858, e a arte
+  # do Essentials nao e desenhada comprimida. Nenhum ajuste de camera faz as
+  # duas casarem: ou os sprites entram na camera, ou nao fecha.
+  SPRITES_NA_CAMERA = true
 
   # O z do elemento quando o chao esta ligado.
   #
@@ -222,6 +245,9 @@ module PrismTest3D
       Prism3D.ground = false
     end
 
+    # A partir daqui o elemento existe, e `project` pode ser chamado.
+    @iniciado = true
+
     # Carregar uma vez so: o modelo vive no motor enquanto o jogo viver.
     if @modelo.nil?
       @modelo = Prism3D.load_model(MODELO, UNIDADES_POR_CELULA)
@@ -289,15 +315,22 @@ module PrismTest3D
     return unless running?
     return unless $game_map
 
+    # A camera e o z saem do `sincronizar`, que roda uma vez por quadro e pode
+    # ter sido chamado antes daqui, por um sprite. Se os sprites estiverem fora
+    # da camera, ninguem chamou ainda, e entao e aqui que ela e posta.
+    #
     # display_x conta em quartos de pixel: 32 pixels por tile vezes 4 da 128.
-    Prism3D.map_camera($game_map.display_x / 128.0,
-                       $game_map.display_y / 128.0,
-                       32.0, ALTURA_NA_TELA)
-
-    # Com o chao ligado o z fica preso no CHAO_Z: a captura precisa acontecer
-    # logo depois do tile de chao, e nao na altura do objeto. Sem chao, o z
-    # acompanha a rolagem, como o dos personagens.
-    Prism3D.z = (PERSPECTIVA && CHAO) ? CHAO_Z : element_z
+    if camera_ativa?
+      sincronizar
+    else
+      Prism3D.map_camera($game_map.display_x / 128.0,
+                         $game_map.display_y / 128.0,
+                         32.0, ALTURA_NA_TELA)
+      # Com o chao ligado o z fica preso no CHAO_Z: a captura precisa acontecer
+      # logo depois do tile de chao, e nao na altura do objeto. Sem chao, o z
+      # acompanha a rolagem, como o dos personagens.
+      Prism3D.z = (PERSPECTIVA && CHAO) ? CHAO_Z : element_z
+    end
 
     medir if MEDIR
 
@@ -394,3 +427,162 @@ EventHandlers.add(:on_frame_update, :prism_test_3d,
     PrismTest3D.protegido("update") { PrismTest3D.update }
   }
 )
+
+#===============================================================================
+# Os sprites 2D entram na camera 3D
+#
+# Isto e o lado Ruby do 2.5D: o personagem e o tile alto continuam sendo os
+# mesmos sprites do Essentials, so que posicionados e escalados pela camera em
+# perspectiva, em vez de pela conversao 2D do motor.
+#
+# Reabrir classe a partir de um plugin e o caminho normal do Essentials, e nao
+# toca nos scripts do kit.
+#
+# Duas coisas que a conta obriga e que nao sao obvias:
+#
+# A escala do sprite vem da LARGURA da fileira, nunca da altura. Um cartao em
+# pe e virado para a camera, entao a altura dele na tela segue a mesma escala
+# isotropica da largura. Ja uma unidade de altura do MUNDO projeta k x cos(59),
+# ou seja 51 por cento do que uma unidade de largura projeta, porque o eixo
+# vertical do mundo esta inclinado em relacao a visao. Usar essa escala
+# deitaria o personagem. E por isso que o DS usa billboard com matriz de
+# rotacao em vez de so posicionar um quadrado no mundo.
+#
+# A camera e sincronizada sob demanda, e nao no `on_frame_update`. O Essentials
+# dispara esse evento no FIM do `updateSpritesets`, ou seja depois de os
+# sprites ja terem se posicionado. Quem sincronizasse la entregaria a eles a
+# camera do quadro anterior, e o mapa inteiro andaria um quadro atrasado.
+#===============================================================================
+
+module PrismTest3D
+  module_function
+
+  def camera_ativa?
+    return false unless SPRITES_NA_CAMERA && PERSPECTIVA
+    return false unless running? && @iniciado && $game_map
+    true
+  end
+
+  # Poe a camera do quadro corrente, uma vez so por quadro.
+  def sincronizar
+    return unless camera_ativa?
+    return if @quadro == Graphics.frame_count
+
+    @quadro = Graphics.frame_count
+    @fileiras = {}
+
+    Prism3D.map_camera($game_map.display_x / 128.0,
+                       $game_map.display_y / 128.0,
+                       32.0, ALTURA_NA_TELA)
+    Prism3D.z = (PERSPECTIVA && CHAO) ? CHAO_Z : element_z
+  rescue StandardError
+    @fileiras = {}
+  end
+
+  # A fileira `mundo_z` do chao, projetada uma vez e reaproveitada.
+  #
+  # A camera so inclina, nunca gira de lado, entao todo ponto de uma mesma
+  # fileira tem a mesma profundidade: a fileira sai de duas projecoes e o resto
+  # dela e aritmetica, sem aproximacao. Sao dezenas de chamadas por quadro em
+  # vez de uma por sprite, e o TilemapRenderer tem 663 sprites.
+  #
+  # Devolve [x_em_zero, pixels_por_tile, y_da_fileira].
+  def fileira(mundo_z)
+    @fileiras ||= {}
+    achado = @fileiras[mundo_z]
+    return achado if achado
+
+    a = Prism3D.project(0.0, 0.0, mundo_z)
+    return nil if a.nil?
+    b = Prism3D.project(1.0, 0.0, mundo_z)
+    return nil if b.nil?
+
+    largura = b[0] - a[0]
+    return nil if largura <= 0.01
+
+    @fileiras[mundo_z] = [a[0], largura, a[1]]
+  end
+
+  # Onde um ponto do chao cai na tela, e qual a escala do sprite ali.
+  # Devolve [x, y, zoom] com o zoom ja relativo aos 32 pixels de um tile.
+  def no_chao(mundo_x, mundo_z)
+    d = fileira(mundo_z)
+    return nil if d.nil?
+
+    [d[0] + (mundo_x * d[1]), d[2], d[1] / 32.0]
+  end
+end
+
+#-------------------------------------------------------------------------------
+# Personagem e evento
+#
+# O `Sprite_Character` ja usa `ox` na metade da largura e `oy` na altura, entao
+# o `x` e o `y` dele SAO o ponto de contato com o chao. Basta trocar os dois
+# pelos projetados e deixar o `zoom` cuidar do tamanho: as ancoras continuam
+# valendo, porque o zoom escala em volta delas.
+#-------------------------------------------------------------------------------
+class Sprite_Character < RPG::Sprite
+  alias prism3d_update update
+
+  def update
+    prism3d_update
+    return unless PrismTest3D.camera_ativa?
+    return if !self.visible || @character.nil?
+
+    PrismTest3D.sincronizar
+
+    # O pe do sprite fica na borda de baixo da celula, que e o `screen_y_ground`
+    # do motor: por isso o mais um no Z, e o meio no X.
+    ponto = PrismTest3D.no_chao(@character.real_x / 128.0 + 0.5,
+                                @character.real_y / 128.0 + 1.0)
+    return if ponto.nil?
+
+    self.x = ponto[0].round
+    self.y = ponto[1].round
+    self.zoom_x = ponto[2]
+    self.zoom_y = ponto[2]
+  rescue StandardError
+    # Sprite que falhar aqui fica onde o motor deixou, e o jogo segue.
+  end
+end
+
+#-------------------------------------------------------------------------------
+# Os tiles altos
+#
+# So os de prioridade maior que zero precisam disto. Os de prioridade zero sao
+# o chao, e ja estao dentro da imagem que o plano de chao capturou: mexer neles
+# seria trabalho para nada, e eles nem aparecem, porque o plano os cobre.
+#
+# O gancho nao recebe a celula do mundo, mas ela sai da inversa da conta que ele
+# mesmo acabou de fazer: `mundo = tela / 32 + rolagem`.
+#
+# O `TileSprite` nao usa `ox` nem `oy`, entao o `x` e o `y` sao o canto superior
+# esquerdo, e o rodape centrado precisa ser descontado na mao.
+#-------------------------------------------------------------------------------
+class TilemapRenderer
+  alias prism3d_refresh_tile_coordinates refresh_tile_coordinates
+
+  def refresh_tile_coordinates(tile, x, y)
+    prism3d_refresh_tile_coordinates(tile, x, y)
+    return unless PrismTest3D.camera_ativa?
+
+    prioridade = tile.priority
+    return if prioridade.nil? || prioridade <= 0
+
+    PrismTest3D.sincronizar
+
+    celula_x = (tile.x / 32.0) + ($game_map.display_x / 128.0)
+    celula_z = (tile.y / 32.0) + ($game_map.display_y / 128.0)
+
+    ponto = PrismTest3D.no_chao(celula_x.round + 0.5, celula_z.round + 1.0)
+    return if ponto.nil?
+
+    zoom = ponto[2]
+    tile.zoom_x = ZOOM_X * zoom
+    tile.zoom_y = ZOOM_Y * zoom
+    tile.x = (ponto[0] - (DISPLAY_TILE_WIDTH * 0.5 * zoom)).round
+    tile.y = (ponto[1] - (DISPLAY_TILE_HEIGHT * zoom)).round
+  rescue StandardError
+    # Idem: tile que falhar fica onde o motor deixou.
+  end
+end
