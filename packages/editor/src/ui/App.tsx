@@ -10,9 +10,9 @@ import {
   type Stamp,
 } from "../scene/paint.js";
 import { EventPanel } from "./chrome/EventPanel.jsx";
-import { foodTruck, footprint } from "../scene/model.js";
-import { assetUrl } from "../shared/ipc.js";
-import { bakeModel } from "./viewport/bake.js";
+import { ObjectPanel } from "./chrome/ObjectPanel.jsx";
+import { assetUrl, type ModelEntry } from "../shared/ipc.js";
+import { bakeLoadedModel, loadModelFile } from "./viewport/objModel.js";
 import { MapPanel } from "./chrome/MapPanel.jsx";
 import { ModeRail, type ModeId } from "./chrome/ModeRail.jsx";
 import { SOON_LABEL } from "./chrome/Soon.jsx";
@@ -20,6 +20,7 @@ import { StatusBar } from "./chrome/StatusBar.jsx";
 import { TilePanel } from "./chrome/TilePanel.jsx";
 import { ToolBar, type ToolId } from "./chrome/ToolBar.jsx";
 import { TopBar } from "./chrome/TopBar.jsx";
+import type { PlacedObject } from "../scene/buildScene.js";
 import { useProject, type Draft } from "./useProject.js";
 import { Viewport, type ViewportHandle } from "./Viewport.jsx";
 import { ZOOM_STEPS, type PickedCell, type Zoom } from "./viewport/scene3d.js";
@@ -50,6 +51,9 @@ export function App() {
   const [hovered, setHovered] = useState<PickedCell | null>(null);
   const [event, setEvent] = useState<number | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const [models, setModels] = useState<readonly ModelEntry[]>([]);
+  const [model, setModel] = useState<string | null>(null);
+  const [object, setObject] = useState<number | null>(null);
 
   const stroke = useRef<Stroke | null>(null);
 
@@ -84,6 +88,7 @@ export function App() {
         id,
         target.heights,
         target.tiles,
+        target.objects,
       );
       viewport.current?.redraw(scene);
     },
@@ -118,7 +123,7 @@ export function App() {
           setMessage("already at the height limit");
           return null;
         }
-        return { heights, tiles: from.tiles };
+        return { heights, tiles: from.tiles, objects: from.objects };
       }
 
       // Shift erases whatever the tool is: the same gesture that lowers
@@ -150,7 +155,7 @@ export function App() {
               });
 
       if (result.changed === 0) return null;
-      return { heights: from.heights, tiles: result.tiles };
+      return { heights: from.heights, tiles: result.tiles, objects: from.objects };
     },
     [state.map?.grid, mode, tool, brush, layer, stamp],
   );
@@ -172,54 +177,145 @@ export function App() {
     [state.map?.events],
   );
 
+  /** O catalogo de modelos, relido quando o projeto abre. */
+  useEffect(() => {
+    const root = state.project?.root;
+    if (root === undefined) return;
+    void window.prism.listModels(root).then((found) => {
+      setModels(found);
+      setModel((old) => old ?? found[0]?.path ?? null);
+    });
+  }, [state.project?.root]);
+
+  /** Qual objeto do mapa cobre esta celula, ou null. */
+  const objectAt = useCallback(
+    (cell: PickedCell) => {
+      const list = draft?.objects ?? [];
+      // De tras para frente: o ultimo colocado e o que esta por cima, e e ele
+      // que a pessoa espera pegar ao clicar.
+      for (let index = list.length - 1; index >= 0; index -= 1) {
+        const item = list[index];
+        if (item === undefined) continue;
+        if (
+          cell.x >= item.x &&
+          cell.x < item.x + item.width &&
+          cell.y >= item.y &&
+          cell.y < item.y + item.depth
+        ) {
+          return index;
+        }
+      }
+      return null;
+    },
+    [draft?.objects],
+  );
+
+  /** Troca a lista de objetos, como um passo de desfazer. */
+  const editObjects = useCallback(
+    (next: readonly PlacedObject[]) => {
+      if (draft === null) return;
+      project.edit({ ...draft, objects: next });
+    },
+    [draft, project],
+  );
+
   /**
-   * Coloca o objeto 3D na celula, assando a imagem na hora.
+   * Coloca o modelo escolhido na celula.
    *
-   * Escreve direto no projeto, fora do desfazer: o objeto e uma imagem no
-   * disco mais uma linha no .rxdata, e fingir que ctrl+Z desfaz isso seria
-   * mentir. A interface diz o que gravou.
+   * A imagem assada grava na hora, porque e um arquivo em Graphics/Objects e
+   * a mesma para todas as copias do modelo. A colocacao entra no rascunho, e
+   * so vai para o .rxdata no ctrl+S: a partir do momento em que existe mover,
+   * fingir que ctrl+Z nao desfaz colocar seria mentira.
    */
   const placeObject = useCallback(
     (cell: PickedCell) => {
       const root = state.project?.root;
-      const id = state.map?.id;
-      if (root === undefined || id === undefined) return;
+      if (root === undefined || model === null || draft === null) return;
 
       void (async () => {
         try {
-          const model = foodTruck();
-          const baked = bakeModel(model);
-          const area = footprint(model);
-          const object = {
-            name: model.name,
+          const loaded = await loadModelFile(model);
+          const baked = bakeLoadedModel(loaded);
+          // O nome da imagem espelha a categoria do modelo, para um poste e um
+          // predio poderem ter o mesmo nome sem um sobrescrever o outro.
+          const name = model
+            .replace(/^Prism\/Models\//, "")
+            .replace(/\.obj$/i, "");
+
+          await window.prism.bakeObject(root, name, baked.png);
+          // A imagem acabou de mudar no disco, e o cache da viewport guarda a
+          // anterior pela mesma URL.
+          viewport.current?.forgetAsset(assetUrl(`Graphics/Objects/${name}.png`));
+
+          const placed: PlacedObject = {
+            name,
+            model,
             x: cell.x,
             y: cell.y,
-            width: area.width,
-            depth: area.depth,
+            width: loaded.area.width,
+            depth: loaded.area.depth,
             anchorX: baked.anchorX,
             anchorY: baked.anchorY,
           };
-
-          await window.prism.placeObject(root, id, object, baked.png);
-          // A imagem acabou de mudar no disco, e o cache da viewport guarda a
-          // anterior pela mesma URL.
-          viewport.current?.forgetAsset(
-            assetUrl(`Graphics/Objects/${model.name}.png`),
-          );
-          setMessage(`placed ${model.name} at ${cell.x},${cell.y}`);
-          await project.openMap(id);
+          editObjects([...(draft.objects ?? []), placed]);
+          setObject(draft.objects.length);
+          setMessage(`placed ${name} at ${cell.x},${cell.y}`);
         } catch (error) {
           setMessage(error instanceof Error ? error.message : String(error));
         }
       })();
     },
-    [state.project?.root, state.map?.id, project],
+    [state.project?.root, model, draft, editObjects],
   );
+
+  /** Move o objeto selecionado para outra celula. */
+  const moveObject = useCallback(
+    (index: number, x: number, y: number) => {
+      if (draft === null) return;
+      const list = draft.objects;
+      const item = list[index];
+      if (item === undefined) return;
+      if (item.x === x && item.y === y) return;
+      editObjects(list.map((old, at) => (at === index ? { ...old, x, y } : old)));
+    },
+    [draft, editObjects],
+  );
+
+  const removeObject = useCallback(
+    (index: number) => {
+      if (draft === null) return;
+      editObjects(draft.objects.filter((_, at) => at !== index));
+      setObject(null);
+      setMessage("object removed");
+    },
+    [draft, editObjects],
+  );
+
+  /** O arrasto de objeto: qual, e de onde o cursor pegou ele. */
+  const dragging = useRef<{ index: number; dx: number; dy: number } | null>(null);
 
   const onStrokeStart = useCallback(
     (cell: PickedCell, erase: boolean) => {
       if (mode === "events") return selectAt(cell);
-      if (tool === "place") return placeObject(cell);
+      if (mode === "objects") {
+        // Clicar em cima de um objeto pega ele, clicar no vazio coloca. Pegar
+        // guarda o deslocamento dentro do objeto, senao arrastar pelo canto
+        // faria ele saltar para centralizar no cursor.
+        const hit = objectAt(cell);
+        if (hit !== null) {
+          const item = draft?.objects[hit];
+          setObject(hit);
+          if (item) {
+            dragging.current = {
+              index: hit,
+              dx: cell.x - item.x,
+              dy: cell.y - item.y,
+            };
+          }
+          return;
+        }
+        return placeObject(cell);
+      }
       if (draft === null) return;
 
       const at: Stroke = { base: draft, from: cell, erase };
@@ -231,7 +327,7 @@ export function App() {
       project.edit(next);
       setMessage(null);
     },
-    [mode, selectAt, tool, placeObject, draft, apply, project],
+    [mode, selectAt, objectAt, placeObject, draft, apply, project],
   );
 
   /**
@@ -243,6 +339,11 @@ export function App() {
    */
   const onStrokeMove = useCallback(
     (cell: PickedCell) => {
+      if (mode === "objects") {
+        const drag = dragging.current;
+        if (drag !== null) moveObject(drag.index, cell.x - drag.dx, cell.y - drag.dy);
+        return;
+      }
       const at = stroke.current;
       if (at === null || draft === null || mode === "events") return;
       // O balde ja pintou a regiao inteira no primeiro clique.
@@ -257,11 +358,12 @@ export function App() {
       project.amend(next);
       void redrawWith(next);
     },
-    [draft, tool, mode, apply, project, redrawWith],
+    [draft, tool, mode, apply, project, redrawWith, moveObject],
   );
 
   const onStrokeEnd = useCallback(() => {
     stroke.current = null;
+    dragging.current = null;
   }, []);
 
   /**
@@ -397,6 +499,32 @@ export function App() {
       const grid = state.map?.grid;
       const key = event.key.toLowerCase();
 
+      // No modo Objects as setas empurram o selecionado uma celula, e Delete
+      // tira ele. Antes dos atalhos de pincel, senao 1, 2 e 3 roubariam a tecla
+      // de quem esta posicionando um objeto.
+      if (mode === "objects" && object !== null && draft !== null) {
+        const item = draft.objects[object];
+        if (item !== undefined) {
+          const passo: Record<string, [number, number]> = {
+            arrowleft: [-1, 0],
+            arrowright: [1, 0],
+            arrowup: [0, -1],
+            arrowdown: [0, 1],
+          };
+          const anda = passo[key];
+          if (anda) {
+            event.preventDefault();
+            moveObject(object, item.x + anda[0], item.y + anda[1]);
+            return;
+          }
+          if (key === "delete" || key === "backspace") {
+            event.preventDefault();
+            removeObject(object);
+            return;
+          }
+        }
+      }
+
       if (key === "1") return setBrush(1);
       if (key === "2") return setBrush(3);
       if (key === "3") return setBrush(5);
@@ -411,7 +539,7 @@ export function App() {
           target,
         );
         if (changed > 0) {
-          project.edit({ heights, tiles: draft.tiles });
+          project.edit({ heights, tiles: draft.tiles, objects: draft.objects });
           setMessage(`levelled to ${target}`);
         }
         return;
@@ -430,7 +558,19 @@ export function App() {
 
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [state.map?.grid, draft, hovered, brush, mode, project, doSave, step]);
+  }, [
+    state.map?.grid,
+    draft,
+    hovered,
+    brush,
+    mode,
+    object,
+    moveObject,
+    removeObject,
+    project,
+    doSave,
+    step,
+  ]);
 
   const height =
     hovered && draft && state.map
@@ -442,13 +582,8 @@ export function App() {
 
   // A área que a ferramenta cobriria, para o cursor mostrar antes de pintar.
   const area =
-    mode === "draw" && tool === "place"
-      ? {
-          left: 0,
-          top: 0,
-          width: footprint(foodTruck()).width,
-          height: footprint(foodTruck()).depth,
-        }
+    mode === "objects"
+      ? { left: 0, top: 0, width: 1, height: 1 }
       : mode === "terrain"
       ? brushFootprint(singleStamp(0), brush)
       : mode === "events"
@@ -479,7 +614,13 @@ export function App() {
 
         <ToolBar
           mode={
-            mode === "terrain" ? "terrain" : mode === "events" ? "events" : "draw"
+            mode === "terrain"
+              ? "terrain"
+              : mode === "events"
+                ? "events"
+                : mode === "objects"
+                  ? "objects"
+                  : "draw"
           }
           tool={mode === "terrain" ? "pencil" : tool}
           onTool={setTool}
@@ -562,7 +703,17 @@ export function App() {
             />
           </main>
 
-          {mode === "events" ? (
+          {mode === "objects" ? (
+            <ObjectPanel
+              models={models}
+              chosen={model}
+              onChoose={setModel}
+              objects={draft?.objects ?? []}
+              selected={object}
+              onSelect={setObject}
+              onRemove={removeObject}
+            />
+          ) : mode === "events" ? (
             <EventPanel
               map={state.map}
               selected={event}

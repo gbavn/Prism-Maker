@@ -1,8 +1,8 @@
 import {
+  Boxes,
   CopyPlus,
   Eraser,
   MousePointer2,
-  MoveDiagonal,
   PaintBucket,
   Pencil,
   Square,
@@ -10,10 +10,10 @@ import {
 } from "lucide-react";
 import { Soon } from "./Soon.jsx";
 
-export type ToolId = "pencil" | "rectangle" | "fill" | "erase" | "place";
+export type ToolId = "pencil" | "rectangle" | "fill" | "erase";
 
 interface Props {
-  mode: "draw" | "terrain" | "events";
+  mode: "draw" | "terrain" | "events" | "objects";
   tool: ToolId;
   onTool: (tool: ToolId) => void;
   brush: number;
@@ -34,7 +34,6 @@ const TOOLS = [
   { id: "rectangle", label: "Rectangle", icon: Square },
   { id: "fill", label: "Fill", icon: PaintBucket },
   { id: "erase", label: "Erase", icon: Eraser },
-  { id: "place", label: "Place", icon: MoveDiagonal },
 ] as const;
 
 const soonTools = [{ label: "Select", icon: MousePointer2 }] as const;
@@ -57,6 +56,24 @@ export function ToolBar({
   step,
   onSoon,
 }: Props) {
+  // Em Objects o gesto e um so, e ele muda com o que esta embaixo do cursor:
+  // celula vazia coloca, objeto pega. Dizer isso em uma linha e melhor que
+  // inventar dois botoes de modo para a mesma ferramenta.
+  if (mode === "objects") {
+    return (
+      <div className="flex items-center gap-1 rounded-lg border border-edge bg-panel px-2 py-1.5">
+        <span className={`${chip} ${active}`}>
+          <Boxes className="h-3.5 w-3.5" strokeWidth={1.8} />
+          Place
+        </span>
+        <span className="text-[11px] text-dim">
+          click to place the chosen model, drag one to move it, arrows nudge,
+          Delete removes
+        </span>
+      </div>
+    );
+  }
+
   // Em Events nada do resto da barra serve: nao ha camada, nem pincel, nem
   // ferramenta de pintar. Repetir os controles ali so ensinaria errado.
   if (mode === "events") {

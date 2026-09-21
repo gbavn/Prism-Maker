@@ -104,8 +104,31 @@ frame certo do charset, deitado no chão em 2D e em pé no 3D. Toda célula com
 evento ganha um contorno violeta, porque porta e aviso usam charset quase
 transparente de propósito e sem a marca ficariam invisíveis para quem edita.
 
-Comum aos dois: teclas 1 2 3 trocam o pincel, ctrl+Z desfaz, ctrl+S grava. O
-desfazer é um só para os dois modos, porque quem aperta ctrl+Z espera voltar a
+Modo **Objects**: coloca e move os objetos 3D. O painel da direita traz o
+catálogo em cima, agrupado por categoria, e o que está no mapa embaixo. Clicar
+em célula vazia coloca o modelo escolhido, clicar em cima de um objeto pega
+ele, arrastar move, as setas empurram uma célula e Delete apaga.
+
+Colocar, mover e apagar são **alteração pendente**, como tile e elevação: vão
+para o desfazer e só tocam o `.rxdata` no ctrl+S. A imagem assada é outra
+história e grava na hora, porque ela é um arquivo em `Graphics/Objects/` e é a
+mesma para todas as cópias do modelo. A partir do momento em que existe mover,
+fingir que ctrl+Z não desfaz colocar seria mentira.
+
+O catálogo é a pasta `Prism/Models/` do projeto, com um nível de subpasta, e a
+subpasta é a categoria. Separada de `Graphics/` de propósito: o RPG Maker
+original varre `Graphics/` para listar arte, e um `.obj` naquela lista só
+confundiria. A imagem assada espelha a categoria, então
+`Prism/Models/buildings/lab.obj` vira `Graphics/Objects/buildings/lab.png`, e
+um poste e um prédio podem ter o mesmo nome sem um sobrescrever o outro.
+
+Carregar OBJ no editor **não tem parser escrito à mão**: o Three já traz
+`OBJLoader` e `MTLLoader`, e o editor já serve o projeto pelo protocolo
+`prism-asset://`, com `supportFetchAPI`. Os dois carregadores baixam por URL e
+resolvem MTL e textura relativos sozinhos.
+
+Comum aos três: teclas 1 2 3 trocam o pincel, ctrl+Z desfaz, ctrl+S grava. O
+desfazer é um só para todos os modos, porque quem aperta ctrl+Z espera voltar a
 última coisa que fez, não a última coisa que fez naquela ferramenta.
 
 Alteração pendente nunca é jogada fora em silêncio. Trocar de mapa ou abrir o

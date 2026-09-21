@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { OpenedMap, OpenedProject } from "../project/loadProject.js";
 import { History } from "../scene/elevation.js";
+import type { PlacedObject } from "../scene/buildScene.js";
 
 /**
  * O rascunho do mapa aberto.
@@ -16,6 +17,16 @@ import { History } from "../scene/elevation.js";
 export interface Draft {
   heights: number[];
   tiles: Uint16Array;
+  /**
+   * Os objetos 3D colocados no mapa.
+   *
+   * Entram no rascunho, e nao gravam na hora, porque a partir do momento em
+   * que existe "mover" a colocacao vira edicao como qualquer outra: ctrl+Z
+   * tem que voltar o objeto para onde estava, e ctrl+S tem que ser o momento
+   * em que o .rxdata muda. A imagem assada e outra historia, e essa sim grava
+   * na hora, porque e um arquivo em Graphics/Objects e nao um estado do mapa.
+   */
+  objects: readonly PlacedObject[];
 }
 
 export interface ProjectState {
@@ -79,6 +90,7 @@ export function useProject() {
         const draft: Draft = {
           heights: [...map.heights],
           tiles: new Uint16Array(map.tiles),
+          objects: map.objects,
         };
         history.current = new History<Draft>(draft);
         saved.current = draft;
@@ -132,6 +144,8 @@ export function useProject() {
     base !== null &&
     current.heights.some((step, i) => step !== base.heights[i]);
   const tilesDirty = current !== null && base !== null && current.tiles !== base.tiles;
+  const objectsDirty =
+    current !== null && base !== null && current.objects !== base.objects;
 
   /**
    * Grava só o que mudou.
@@ -156,6 +170,10 @@ export function useProject() {
       const result = await window.prism.saveTiles(root, id, draft.tiles);
       written.push(result.path.split("/").pop() ?? "map");
     }
+    if (base === null || draft.objects !== base.objects) {
+      await window.prism.saveObjects(root, id, draft.objects);
+      written.push("objects");
+    }
 
     saved.current = draft;
     bump();
@@ -166,7 +184,7 @@ export function useProject() {
     state,
     draft: current,
     revision,
-    dirty: heightsDirty || tilesDirty,
+    dirty: heightsDirty || tilesDirty || objectsDirty,
     canUndo: history.current?.canUndo ?? false,
     canRedo: history.current?.canRedo ?? false,
     openMap,

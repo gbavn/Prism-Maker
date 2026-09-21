@@ -193,7 +193,7 @@ module PrismTest3D
   ]
 
   # O laboratorio, carregado de arquivo. Caminho relativo a pasta do jogo.
-  MODELO = "Plugins/PrismTest3D/model/lab.obj"
+  MODELO = "Prism/Models/buildings/lab.obj"
 
   # Quantas unidades do arquivo valem uma celula. Modelo de jogo de DS costuma
   # vir com 16, e as medidas deste batem: 116 por 80 por 70 unidades viram

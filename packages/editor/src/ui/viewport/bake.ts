@@ -6,6 +6,7 @@ import {
   Group,
   Mesh,
   MeshLambertMaterial,
+  type Object3D,
   OrthographicCamera,
   PCFSoftShadowMap,
   PlaneGeometry,
@@ -14,7 +15,14 @@ import {
   Vector3,
   WebGLRenderer,
 } from "three";
-import { boxCorners, bounds, footprint, pivot, type Model } from "../../scene/model.js";
+import {
+  boxCorners,
+  bounds,
+  footprint,
+  pivot,
+  type Extent,
+  type Model,
+} from "../../scene/model.js";
 import { TILE_PIXELS } from "../../scene/tileAtlas.js";
 
 /**
@@ -58,7 +66,33 @@ export interface BakedImage {
   anchorY: number;
 }
 
-export function bakeModel(model: Model): BakedImage {
+/**
+ * O que o assar precisa saber sobre o objeto, seja ele caixa ou malha de
+ * arquivo.
+ *
+ * Separado de proposito: o caminho das caixas ja estava medido e testado, e
+ * o OBJ entra reaproveitando exatamente a mesma camera, luz e ancora, em vez
+ * de ganhar um assar proprio que divergiria com o tempo.
+ */
+export interface BakeSubject {
+  /** Ja posicionado e girado no mundo, em celulas, com o chao em Y zero. */
+  content: Object3D;
+  /** Caixa envolvente depois do giro. */
+  box: Extent;
+  /** Quantas celulas o objeto ocupa no chao. */
+  area: { width: number; depth: number };
+  /**
+   * Pontos que o enquadramento tem que conter.
+   *
+   * Para caixa sao os cantos de cada uma, que e mais apertado que a caixa
+   * envolvente. Para malha bastam os oito cantos dela.
+   */
+  points: [number, number, number][];
+}
+
+export function bakeSubject(subject: BakeSubject): BakedImage {
+  const { content, box, area } = subject;
+
   const renderer = new WebGLRenderer({ alpha: true, antialias: true });
   renderer.setPixelRatio(1);
   renderer.setClearColor(0x000000, 0);
@@ -71,8 +105,6 @@ export function bakeModel(model: Model): BakedImage {
   // saem com o mesmo brilho, o objeto perde o volume e vira adesivo.
   scene.add(new AmbientLight(0xffffff, 0.66));
 
-  const centre = pivot(model);
-  const box = bounds(model);
   const middle = new Vector3(
     ((box.min[0] ?? 0) + (box.max[0] ?? 0)) / 2,
     ((box.min[1] ?? 0) + (box.max[1] ?? 0)) / 2,
@@ -99,26 +131,7 @@ export function bakeModel(model: Model): BakedImage {
   fill.position.set(middle.x + 3, middle.y + 1, middle.z + 3);
   scene.add(fill);
 
-  const group = new Group();
-  group.position.set(centre[0], 0, centre[1]);
-  group.rotation.y = (-model.yaw * Math.PI) / 180;
-  scene.add(group);
-
-  for (const entry of model.boxes) {
-    const mesh = new Mesh(
-      new BoxGeometry(entry.size[0], entry.size[1], entry.size[2]),
-      new MeshLambertMaterial({ color: new Color(entry.color) }),
-    );
-    // Dentro do grupo as caixas ficam relativas ao pivo do giro.
-    mesh.position.set(
-      (entry.at[0] ?? 0) - centre[0],
-      entry.at[1] ?? 0,
-      (entry.at[2] ?? 0) - centre[1],
-    );
-    mesh.castShadow = true;
-    mesh.receiveShadow = true;
-    group.add(mesh);
-  }
+  scene.add(content);
 
   // Chao invisivel que so recebe sombra: e ele que assenta o objeto no mundo.
   const ground = new Mesh(
@@ -130,21 +143,16 @@ export function bakeModel(model: Model): BakedImage {
   ground.receiveShadow = true;
   scene.add(ground);
 
-  // Enquadramento exato: todos os cantos do modelo girado, mais os quatro
-  // cantos da area no chao, medidos no espaco da camera. Assim a base da
-  // imagem cai na borda sul da area, que e onde o jogo vai apoiar o sprite.
-  const area = footprint(model);
-  const groundCorners: [number, number, number][] = [
+  // Enquadramento exato: os pontos do objeto mais os quatro cantos da area no
+  // chao, medidos no espaco da camera. Assim a base da imagem cai na borda sul
+  // da area, que e onde o jogo vai apoiar o sprite.
+  const points: [number, number, number][] = [
     [box.min[0] ?? 0, 0, box.min[2] ?? 0],
     [box.max[0] ?? 0, 0, box.min[2] ?? 0],
     [box.min[0] ?? 0, 0, (box.min[2] ?? 0) + area.depth],
     [box.max[0] ?? 0, 0, (box.min[2] ?? 0) + area.depth],
+    ...subject.points,
   ];
-
-  const points: [number, number, number][] = [...groundCorners];
-  for (const entry of model.boxes) {
-    points.push(...boxCorners(entry, model.yaw, centre));
-  }
 
   const angle = (BAKE_ELEVATION * Math.PI) / 180;
   const camera = new OrthographicCamera(-1, 1, 1, -1, 0.1, 100);
@@ -204,4 +212,36 @@ export function bakeModel(model: Model): BakedImage {
     anchorX: Math.round((anchor.x - camera.left) * TILE_PIXELS),
     anchorY: Math.round((camera.top - anchor.y) * TILE_PIXELS),
   };
+}
+
+export function bakeModel(model: Model): BakedImage {
+  const centre = pivot(model);
+  const box = bounds(model);
+
+  const group = new Group();
+  group.position.set(centre[0], 0, centre[1]);
+  group.rotation.y = (-model.yaw * Math.PI) / 180;
+
+  for (const entry of model.boxes) {
+    const mesh = new Mesh(
+      new BoxGeometry(entry.size[0], entry.size[1], entry.size[2]),
+      new MeshLambertMaterial({ color: new Color(entry.color) }),
+    );
+    // Dentro do grupo as caixas ficam relativas ao pivo do giro.
+    mesh.position.set(
+      (entry.at[0] ?? 0) - centre[0],
+      entry.at[1] ?? 0,
+      (entry.at[2] ?? 0) - centre[1],
+    );
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    group.add(mesh);
+  }
+
+  const points: [number, number, number][] = [];
+  for (const entry of model.boxes) {
+    points.push(...boxCorners(entry, model.yaw, centre));
+  }
+
+  return bakeSubject({ content: group, box, area: footprint(model), points });
 }

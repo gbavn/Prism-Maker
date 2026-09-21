@@ -1,4 +1,5 @@
 import {
+  Boxes,
   Brush,
   Globe2,
   Map as MapIcon,
@@ -19,6 +20,7 @@ export const MODES = [
   { id: "draw", label: "Draw", icon: Brush, ready: true },
   { id: "terrain", label: "Terrain", icon: Mountain, ready: true },
   { id: "events", label: "Events", icon: Users, ready: true },
+  { id: "objects", label: "Objects", icon: Boxes, ready: true },
   { id: "map", label: "Map", icon: MapIcon, ready: false },
   { id: "world", label: "World", icon: Globe2, ready: false },
   { id: "notes", label: "Notes", icon: StickyNote, ready: false },
@@ -58,6 +60,7 @@ export function ModeRail({ mode, onMode, onSoon }: Props) {
             onClick={() => onMode(item.id)}
             aria-current={current}
             title={item.label}
+            data-mode={item.id}
             className={`${slot} rounded-lg transition-colors ${
               current
                 ? "bg-brand/15 text-brand"

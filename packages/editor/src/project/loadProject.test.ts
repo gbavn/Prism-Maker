@@ -13,7 +13,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { openMap, openProject, saveElevation, saveTiles } from "./loadProject.js";
+import {
+  openMap,
+  openProject,
+  saveElevation,
+  saveObjects,
+  saveTiles,
+} from "./loadProject.js";
 
 const sourceData = fileURLToPath(
   new URL("../../../../Game/essentials-v21.1/Data/", import.meta.url),
@@ -227,5 +233,57 @@ describe("gravar tiles no .rxdata", () => {
     );
     // E o arquivo continua como estava.
     expect(readFileSync(path).equals(bytes)).toBe(true);
+  });
+});
+
+describe("gravar objetos 3D no .rxdata", () => {
+  it("escreve e lê de volta o modelo e o giro", () => {
+    openProject(root);
+    openMap(root, 2);
+
+    saveObjects(root, 2, [
+      {
+        name: "buildings/lab",
+        model: "Prism/Models/buildings/lab.obj",
+        x: 12,
+        y: 6,
+        width: 8,
+        depth: 5,
+        anchorX: 40,
+        anchorY: 96,
+        yaw: 24,
+      },
+    ]);
+
+    const again = openMap(root, 2);
+    expect(again.objects).toHaveLength(1);
+    expect(again.objects[0]?.model).toBe("Prism/Models/buildings/lab.obj");
+    expect(again.objects[0]?.yaw).toBe(24);
+    expect(again.objects[0]?.x).toBe(12);
+  });
+
+  it("omite modelo e giro quando não há, para o mapa antigo sair igual", () => {
+    openProject(root);
+    openMap(root, 2);
+
+    saveObjects(root, 2, [
+      { name: "foodtruck", x: 3, y: 4, width: 4, depth: 3, anchorX: 1, anchorY: 2 },
+    ]);
+
+    const again = openMap(root, 2);
+    expect(again.objects[0]?.model).toBeUndefined();
+    expect(again.objects[0]?.yaw).toBeUndefined();
+  });
+
+  it("apaga a lista quando o último objeto sai", () => {
+    openProject(root);
+    openMap(root, 2);
+
+    saveObjects(root, 2, [
+      { name: "foodtruck", x: 1, y: 1, width: 2, depth: 2, anchorX: 0, anchorY: 0 },
+    ]);
+    saveObjects(root, 2, []);
+
+    expect(openMap(root, 2).objects).toHaveLength(0);
   });
 });

@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, writeFileSync } from "node:fs";
 import { dirname, join, relative, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
 import { fileURLToPath } from "node:url";
@@ -13,7 +13,7 @@ import {
   saveTiles,
 } from "../project/loadProject.js";
 import type { PlacedObject } from "../scene/buildScene.js";
-import { IPC } from "../shared/ipc.js";
+import { IPC, type ModelEntry } from "../shared/ipc.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const editorRoot = resolve(here, "..", "..");
@@ -62,8 +62,14 @@ ipcMain.handle(IPC.openMap, (_event, root: string, id: number) =>
 
 ipcMain.handle(
   IPC.buildScene,
-  (_event, root: string, id: number, heights: number[], tiles?: Uint16Array) =>
-    rebuildScene(root, id, heights, tiles),
+  (
+    _event,
+    root: string,
+    id: number,
+    heights: number[],
+    tiles?: Uint16Array,
+    objects?: PlacedObject[],
+  ) => rebuildScene(root, id, heights, tiles, objects),
 );
 
 ipcMain.handle(
@@ -79,25 +85,76 @@ ipcMain.handle(
 );
 
 /**
- * Grava um objeto 3D no projeto.
+ * Grava a imagem assada de um objeto.
  *
- * Duas escritas: a imagem assada em Graphics/Objects, e a colocacao dentro do
- * .rxdata do mapa. A imagem vai para a pasta de graficos do projeto porque e
- * de la que o jogo carrega qualquer bitmap, pelo RPG::Cache.
+ * Em Graphics/Objects, porque e de la que o jogo carrega qualquer bitmap, pelo
+ * RPG::Cache. O nome pode ter subpasta, e a pasta e criada junto: a categoria
+ * do modelo vira subpasta aqui tambem, para um poste e um predio poderem ter o
+ * mesmo nome sem um sobrescrever o outro.
+ *
+ * So a imagem. A colocacao no mapa e alteracao pendente, como tile e
+ * elevacao, e sai pelo `saveObjects` no ctrl+S.
  */
 ipcMain.handle(
-  IPC.placeObject,
-  (_event, root: string, id: number, object: PlacedObject, png: string) => {
-    const folder = join(root, "Graphics", "Objects");
-    mkdirSync(folder, { recursive: true });
-
-    const image = join(folder, `${object.name}.png`);
+  IPC.bakeObject,
+  (_event, root: string, name: string, png: string) => {
+    const image = join(root, "Graphics", "Objects", `${name}.png`);
+    mkdirSync(dirname(image), { recursive: true });
     writeFileSync(image, Buffer.from(png, "base64"));
-
-    const { count } = saveObjects(root, id, [object]);
-    return { image, count };
+    return { image };
   },
 );
+
+ipcMain.handle(
+  IPC.saveObjects,
+  (_event, root: string, id: number, objects: PlacedObject[]) =>
+    saveObjects(root, id, objects),
+);
+
+/**
+ * O catalogo de modelos 3D do projeto.
+ *
+ * Varre `Prism/Models`, um nivel de subpasta, e a subpasta vira a categoria.
+ * Pasta separada de Graphics de proposito: o RPG Maker original varre Graphics
+ * para listar arte, e um `.obj` naquela lista so confundiria.
+ *
+ * Pasta ausente nao e erro, e o caso de projeto que ainda nao tem modelo
+ * nenhum.
+ */
+ipcMain.handle(IPC.listModels, (_event, root: string) => {
+  const base = join(root, "Prism", "Models");
+  const found: ModelEntry[] = [];
+
+  const varrer = (folder: string, category: string) => {
+    let entries;
+    try {
+      entries = readdirSync(folder, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      if (entry.isDirectory() && category === "") {
+        varrer(join(folder, entry.name), entry.name);
+        continue;
+      }
+      if (!entry.isFile() || !entry.name.toLowerCase().endsWith(".obj")) continue;
+      const name = entry.name.slice(0, -4);
+      found.push({
+        category,
+        name,
+        path: ["Prism", "Models", ...(category === "" ? [] : [category]), entry.name].join("/"),
+      });
+    }
+  };
+
+  varrer(base, "");
+  found.sort((a, b) =>
+    a.category === b.category
+      ? a.name.localeCompare(b.name)
+      : a.category.localeCompare(b.category),
+  );
+  return found;
+});
 
 /**
  * Pergunta o que fazer com alteracao pendente.
@@ -314,8 +371,10 @@ async function rehearsePlacing(window: BrowserWindow, spec: string): Promise<voi
   );
   await wait(2500);
 
+  // Objects virou modo proprio, e nao mais uma ferramenta dentro do Draw:
+  // colocar objeto nao e pincelada.
   await window.webContents.executeJavaScript(
-    "document.querySelector('[data-tool=\"place\"]')?.click()",
+    "document.querySelector('[data-mode=\"objects\"]')?.click()",
   );
   await wait(600);
 

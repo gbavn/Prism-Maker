@@ -34,8 +34,18 @@ export interface TileQuad {
  * celulas ao norte, como acontece com qualquer construcao alta num mapa.
  */
 export interface PlacedObject {
-  /** Arquivo em Graphics/Objects, sem extensao. */
+  /** Arquivo em Graphics/Objects, sem extensao. Pode ter subpasta. */
   name: string;
+  /**
+   * O modelo 3D de origem, relativo a raiz do projeto, ou undefined.
+   *
+   * Objeto colocado antes de existir catalogo de modelo nao tem: ele vive so
+   * como imagem assada, e continua valendo. Quem tem, o runtime 3D carrega
+   * como malha de verdade em vez de desenhar o cartao.
+   */
+  model?: string;
+  /** Giro em volta do eixo vertical, em graus. */
+  yaw?: number;
   /** Celula do canto noroeste da area no chao. */
   x: number;
   y: number;

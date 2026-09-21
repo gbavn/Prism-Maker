@@ -11,7 +11,9 @@ export const IPC = {
   saveTiles: "prism:save-tiles",
   confirmSave: "prism:confirm-save",
   playtest: "prism:playtest",
-  placeObject: "prism:place-object",
+  bakeObject: "prism:bake-object",
+  listModels: "prism:list-models",
+  saveObjects: "prism:save-objects",
 } as const;
 
 /**
@@ -30,6 +32,7 @@ export interface PrismApi {
     id: number,
     heights: readonly number[],
     tiles?: Uint16Array,
+    objects?: readonly PlacedObject[],
   ): Promise<BuiltScene>;
   /** Grava a grade de tiles de volta no .rxdata. */
   saveTiles(
@@ -52,12 +55,44 @@ export interface PrismApi {
    * O render acontece na janela, que e onde existe WebGL; aqui vai so o PNG
    * pronto, em base64.
    */
-  placeObject(
+  /**
+   * Grava a imagem assada em Graphics/Objects.
+   *
+   * So a imagem: a colocacao no mapa fica com o `saveObjects`, porque ela e
+   * alteracao pendente como tile e elevacao, e a imagem nao e. O render
+   * acontece na janela, que e onde existe WebGL, entao aqui chega o PNG
+   * pronto, em base64.
+   */
+  bakeObject(
+    root: string,
+    name: string,
+    png: string,
+  ): Promise<{ image: string }>;
+  /** Os modelos 3D do projeto, varridos de Prism/Models. */
+  listModels(root: string): Promise<ModelEntry[]>;
+  /** Grava a lista de objetos do mapa no .rxdata, sem assar nada. */
+  saveObjects(
     root: string,
     id: number,
-    object: PlacedObject,
-    png: string,
-  ): Promise<{ image: string; count: number }>;
+    objects: readonly PlacedObject[],
+  ): Promise<{ path: string; count: number }>;
+}
+
+/**
+ * Um modelo no catalogo.
+ *
+ * A categoria e a subpasta: `Prism/Models/buildings/lab.obj` vira categoria
+ * "buildings" e nome "lab". Separar por subpasta e o que evita colisao de nome
+ * entre um poste e um predio, e da ao painel um agrupamento sem inventar
+ * metadado nenhum.
+ */
+export interface ModelEntry {
+  /** Categoria, ou seja a subpasta. Vazio quando o arquivo esta na raiz. */
+  category: string;
+  /** Nome do arquivo sem extensao. */
+  name: string;
+  /** Caminho relativo a raiz do projeto, com barras normais. */
+  path: string;
 }
 
 /** Resposta do dialogo de alteracao pendente. */

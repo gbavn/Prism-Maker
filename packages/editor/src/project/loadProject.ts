@@ -309,6 +309,8 @@ function readObjects(bytes: Uint8Array): PlacedObject[] {
     const depth = field("depth");
     const anchorX = field("anchor_x");
     const anchorY = field("anchor_y");
+    const model = field("model");
+    const yaw = field("yaw");
 
     if (
       !(name instanceof RubyString) ||
@@ -327,6 +329,8 @@ function readObjects(bytes: Uint8Array): PlacedObject[] {
       depth,
       anchorX: typeof anchorX === "number" ? anchorX : 0,
       anchorY: typeof anchorY === "number" ? anchorY : 0,
+      ...(model instanceof RubyString ? { model: model.text } : {}),
+      ...(typeof yaw === "number" ? { yaw } : {}),
     });
   }
   return objects;
@@ -360,6 +364,7 @@ export function rebuildScene(
   id: number,
   heights: readonly number[],
   tiles?: Uint16Array,
+  objects?: readonly PlacedObject[],
 ): BuiltScene {
   const entry = loaded.get(cacheKey(root, id)) ?? readMapAndTileset(root, id);
   loaded.set(cacheKey(root, id), entry);
@@ -380,7 +385,9 @@ export function rebuildScene(
     tileset: entry.tileset,
     project: loadManifest(root),
     heights,
-    objects: entry.objects,
+    // O rascunho manda quando existe: mover um objeto precisa aparecer na
+    // hora, e o que esta em cache e o que esta em disco.
+    objects: objects ?? entry.objects,
   });
 }
 
@@ -463,6 +470,14 @@ export function saveObjects(
     entry.set(new RubySymbol("depth"), object.depth);
     entry.set(new RubySymbol("anchor_x"), object.anchorX);
     entry.set(new RubySymbol("anchor_y"), object.anchorY);
+    // Chave ausente quando nao ha modelo, em vez de nil: mapa antigo continua
+    // saindo byte a byte igual ao que entrou, e o plugin 2D nem percebe.
+    if (object.model !== undefined) {
+      entry.set(new RubySymbol("model"), utf8(object.model));
+    }
+    if (object.yaw !== undefined && object.yaw !== 0) {
+      entry.set(new RubySymbol("yaw"), object.yaw);
+    }
     return entry;
   });
 
