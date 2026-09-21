@@ -51,6 +51,23 @@ module PrismTest3D
   GRADE = true
   GRADE_RAIO = 3
 
+  # Placa desenhada na celula do proprio jogador, todo quadro.
+  #
+  # E a regua mais direta que existe para a camera: se ela ficar nos pes dele
+  # ande para onde andar, a conversao de rolagem esta certa. O jeito como ela
+  # erra e o diagnostico. Andar mais que o jogador por um fator acusa a escala,
+  # e o fator diz quanto. Atrasar so enquanto anda e encaixar ao parar acusa a
+  # fase. Errar por um valor fixo acusa a origem.
+  PLACA_DO_JOGADOR = true
+
+  # Numeros em disco, uma linha a cada tantos quadros.
+  #
+  # Com eles a conferencia e aritmetica em vez de olho em pixel: da para
+  # calcular onde a placa deveria cair e comparar com o `screen_x` que o proprio
+  # Essentials usa para posicionar o sprite do jogador.
+  MEDIR = true
+  MEDIR_A_CADA = 30
+
   # [centro_x, centro_y, centro_z, largura, altura, profundidade, r, g, b]
   CAIXAS = [
     [1.15, 0.28, 1, 2.05, 0.18, 1.5, 0.659, 0.220, 0.165],
@@ -166,6 +183,30 @@ module PrismTest3D
     lista.empty? ? [CELULA_PADRAO] : lista
   end
 
+  # Grava os numeros que a camera usa, para a conferencia ser aritmetica.
+  #
+  # O `screen_x` do jogador e a verdade do motor: e ele que posiciona o sprite.
+  # Se a conta daqui discordar dele, o erro esta na conversao, e nao na matriz.
+  def medir
+    @quadro = (@quadro || 0) + 1
+    return unless (@quadro % MEDIR_A_CADA) == 1
+
+    linha = format(
+      "tela %dx%d | display %d,%d = %.3f,%.3f tiles | jogador %d,%d | " \
+      "screen %d,%d | esperado %.1f,%.1f",
+      Graphics.width, Graphics.height,
+      $game_map.display_x, $game_map.display_y,
+      $game_map.display_x / 128.0, $game_map.display_y / 128.0,
+      $game_player.x, $game_player.y,
+      $game_player.screen_x, $game_player.screen_y,
+      ($game_player.x - $game_map.display_x / 128.0) * 32.0 + 16.0,
+      ($game_player.y - $game_map.display_y / 128.0) * 32.0 + 32.0)
+
+    File.open("prism3d-camera.txt", "ab") { |f| f.write(linha + "\r\n") }
+  rescue StandardError
+    # Medir nunca pode derrubar o ensaio.
+  end
+
   def update
     return unless running?
     return unless $game_map
@@ -174,6 +215,8 @@ module PrismTest3D
     Prism3D.map_camera($game_map.display_x / 128.0,
                        $game_map.display_y / 128.0,
                        32.0, ALTURA_NA_TELA)
+
+    medir if MEDIR
 
     radianos = YAW * Math::PI / 180.0
     Prism3D.clear
@@ -191,6 +234,14 @@ module PrismTest3D
                           tom, tom * 0.4, tom * 0.9)
         end
       end
+    end
+
+    if PLACA_DO_JOGADOR && $game_player
+      # Rente ao chao e um pouco mais alta que a grade, para nao brigar com ela
+      # por profundidade quando as duas caem na mesma celula.
+      Prism3D.add_box($game_player.x + 0.5, 0.05, $game_player.y + 0.5,
+                      0.9, 0.06, 0.9, 0.0,
+                      1.0, 0.95, 0.2)
     end
 
     if @modelo
