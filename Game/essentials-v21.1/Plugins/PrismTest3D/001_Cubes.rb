@@ -27,9 +27,10 @@
 # que rotate_around faz aqui. Sem isso o caminhao viraria uma pilha de caixas
 # giradas no lugar, cada uma para um lado.
 #
-# Codigo de ensaio: as caixas estao embutidas aqui porque o editor ainda nao
-# grava geometria no .rxdata, so a imagem assada e a ancora. Quando gravar,
-# isto vira leitura de dado.
+# Os objetos vem do mapa, e nao mais de constante chumbada aqui. Quem coloca e
+# o modo Objects do editor, quem grava e o ctrl+S, na ivar `@prism_objects` do
+# RPG::Map, e quem le e o `objetos_do_mapa` logo abaixo. As caixas do caminhao
+# continuam embutidas porque elas sao a regua antiga, e ficam desligadas.
 #===============================================================================
 
 module PrismTest3D
@@ -48,8 +49,11 @@ module PrismTest3D
   # Ha um elemento so, entao todos os objetos 3D dividem esse z. Para um
   # laboratorio serve. Varios objetos vao pedir um elemento por objeto.
   def element_z
-    borda_sul = CELULA_DO_LAB[1] + (LAB_Z_MAX / UNIDADES_POR_CELULA)
-    ((borda_sul - $game_map.display_y / 128.0) * 32 + 32).round
+    # A borda mais ao sul entre os objetos do mapa: com um elemento so, quem
+    # manda na ordem e o que esta mais para baixo. Mapa sem objeto cai na
+    # celula padrao, que e o caso do ensaio antes de qualquer colocacao.
+    sul = objetos_do_mapa.map { |obj| obj[:y] }.max || CELULA_PADRAO[1]
+    ((sul + 1 - $game_map.display_y / 128.0) * 32 + 32).round
   end
 
   # Perspectiva de verdade, em vez da projecao paralela do mapa.
@@ -192,26 +196,13 @@ module PrismTest3D
     [2.45, 0.22, 1.72, 0.44, 0.2, 0.2, 0.725, 0.737, 0.769],
   ]
 
-  # O laboratorio, carregado de arquivo. Caminho relativo a pasta do jogo.
-  MODELO = "Prism/Models/buildings/lab.obj"
-
   # Quantas unidades do arquivo valem uma celula. Modelo de jogo de DS costuma
   # vir com 16, e as medidas deste batem: 116 por 80 por 70 unidades viram
   # 7,3 por 5 por 4,4 celulas, que e tamanho de predio de mapa.
   UNIDADES_POR_CELULA = 16.0
 
-  # A caixa do modelo, medida no proprio lab.obj, em unidades do arquivo.
-  #
-  # O Y comeca em 1 e nao em 0, entao plantar o modelo em y zero deixava o
-  # predio 1 unidade no ar, que sao 2 pixels na tela. O LAB_Y_MIN existe para
-  # descontar isso. O LAB_Z_MAX e a borda sul da area que ele ocupa no chao,
-  # e e dela que sai o z do elemento.
-  LAB_Y_MIN = 1.0
-  LAB_Z_MAX = 36.0
-
-  # Onde plantar o laboratorio, e quanto gira.
-  CELULA_DO_LAB = [12, 6]
-  LAB_YAW = 0.0
+  # A grade de ensaio precisa de uma celula de referencia, e ela e a do
+  # primeiro objeto do mapa, ou a padrao quando nao ha nenhum.
 
   # Desliga as caixas do caminhao, para olhar so o laboratorio.
   DESENHAR_CAMINHAO = false
@@ -270,13 +261,10 @@ module PrismTest3D
     # A partir daqui o elemento existe, e `project` pode ser chamado.
     @iniciado = true
 
-    # Carregar uma vez so: o modelo vive no motor enquanto o jogo viver.
-    if @modelo.nil?
-      @modelo = Prism3D.load_model(MODELO, UNIDADES_POR_CELULA)
-      if @modelo.nil?
-        echoln "Prism3D: nao consegui carregar #{MODELO}" if defined?(echoln)
-      end
-    end
+    # Os modelos sao carregados sob demanda, por `modelo_de`, conforme o mapa
+    # pede. Carregar aqui exigiria saber de antemao o que cada mapa usa, e o
+    # mapa e quem sabe isso.
+    @modelos = {}
   end
 
   # Gira um ponto do chao em volta do pivo, para o modelo girar inteiro.
@@ -308,6 +296,48 @@ module PrismTest3D
       # Mapa sem objeto nenhum e o caso comum, nao e erro.
     end
     lista.empty? ? [CELULA_PADRAO] : lista
+  end
+
+  # Os objetos gravados no mapa que tem modelo 3D.
+  #
+  # Este e o fim do caminho que comecou no editor: quem coloca e o modo
+  # Objects, quem grava e o ctrl+S, e quem le e isto aqui. Antes a celula do
+  # laboratorio vinha chumbada numa constante, o que servia para provar que a
+  # malha desenha, e nada mais.
+  #
+  # Objeto sem `model` e ignorado de proposito: ele e a imagem assada, e quem
+  # desenha essa e o plugin 2D, `Plugins/Prism/001_Objects.rb`. Desenhar os
+  # dois daria o mesmo predio duas vezes.
+  def objetos_do_mapa
+    mapa = $game_map.instance_variable_get(:@map)
+    gravados = mapa ? mapa.instance_variable_get(:@prism_objects) : nil
+    return [] unless gravados.is_a?(Array)
+
+    gravados.map do |obj|
+      caminho = obj[:model] || obj["model"]
+      next nil if caminho.nil? || caminho.empty?
+
+      {
+        :model => caminho,
+        :x => (obj[:x] || obj["x"]).to_i,
+        :y => (obj[:y] || obj["y"]).to_i,
+        :yaw => ((obj[:yaw] || obj["yaw"]) || 0).to_f,
+      }
+    end.compact
+  rescue StandardError
+    []
+  end
+
+  # Carrega um modelo uma vez so e guarda o indice.
+  #
+  # O motor mantem a malha enquanto o jogo viver, entao recarregar a cada
+  # quadro seria desperdicio puro. O cache e por caminho, porque o mesmo
+  # modelo pode estar plantado em varias celulas.
+  def modelo_de(caminho)
+    @modelos ||= {}
+    return @modelos[caminho] if @modelos.key?(caminho)
+
+    @modelos[caminho] = Prism3D.load_model(caminho, UNIDADES_POR_CELULA)
   end
 
   # Grava os numeros que a camera usa, para a conferencia ser aritmetica.
@@ -366,8 +396,11 @@ module PrismTest3D
           # de regua: se ficarem grudadas nos tiles enquanto o mapa rola, a
           # camera esta certa.
           tom = ((dx + dz) % 2 == 0) ? 0.85 : 0.35
-          Prism3D.add_box(CELULA_DO_LAB[0] + dx + 0.5, 0.02,
-                          CELULA_DO_LAB[1] + dz + 0.5,
+          centro = objetos_do_mapa.first
+          alvo_x = centro ? centro[:x] : CELULA_PADRAO[0]
+          alvo_z = centro ? centro[:y] : CELULA_PADRAO[1]
+          Prism3D.add_box(alvo_x + dx + 0.5, 0.02,
+                          alvo_z + dz + 0.5,
                           0.92, 0.04, 0.92, 0.0,
                           tom, tom * 0.4, tom * 0.9)
         end
@@ -421,13 +454,17 @@ module PrismTest3D
                       1.0, 0.95, 0.2)
     end
 
-    if @modelo
-      # O y negativo assenta o predio: o Y do arquivo comeca em LAB_Y_MIN e
-      # nao em zero, entao sem isso ele fica flutuando essa sobra.
-      Prism3D.add_model(@modelo, CELULA_DO_LAB[0],
-                        -LAB_Y_MIN / UNIDADES_POR_CELULA,
-                        CELULA_DO_LAB[1],
-                        LAB_YAW * Math::PI / 180.0)
+    # Os objetos que o editor gravou no mapa.
+    #
+    # O modelo ja sai assentado do carregador do motor, entao nao ha sobra de
+    # altura para descontar aqui: isso era conta do tempo em que a celula vinha
+    # chumbada e o Y do arquivo comecava em 1.
+    objetos_do_mapa.each do |obj|
+      indice = modelo_de(obj[:model])
+      next if indice.nil?
+
+      Prism3D.add_model(indice, obj[:x], 0.0, obj[:y],
+                        obj[:yaw] * Math::PI / 180.0)
     end
 
     celulas.each do |celula|
