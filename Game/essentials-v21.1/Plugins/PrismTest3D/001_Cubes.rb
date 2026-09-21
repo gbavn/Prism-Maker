@@ -66,7 +66,7 @@ module PrismTest3D
   # calcular onde a placa deveria cair e comparar com o `screen_x` que o proprio
   # Essentials usa para posicionar o sprite do jogador.
   MEDIR = true
-  MEDIR_A_CADA = 30
+  MEDIR_A_CADA = 6
 
   # [centro_x, centro_y, centro_z, largura, altura, profundidade, r, g, b]
   CAIXAS = [
@@ -192,15 +192,14 @@ module PrismTest3D
     return unless (@quadro % MEDIR_A_CADA) == 1
 
     linha = format(
-      "tela %dx%d | display %d,%d = %.3f,%.3f tiles | jogador %d,%d | " \
+      "display %.3f,%.3f | celula %d,%d | real %.3f,%.3f | " \
       "screen %d,%d | esperado %.1f,%.1f",
-      Graphics.width, Graphics.height,
-      $game_map.display_x, $game_map.display_y,
       $game_map.display_x / 128.0, $game_map.display_y / 128.0,
       $game_player.x, $game_player.y,
+      $game_player.real_x / 128.0, $game_player.real_y / 128.0,
       $game_player.screen_x, $game_player.screen_y,
-      ($game_player.x - $game_map.display_x / 128.0) * 32.0 + 16.0,
-      ($game_player.y - $game_map.display_y / 128.0) * 32.0 + 32.0)
+      ($game_player.real_x / 128.0 - $game_map.display_x / 128.0) * 32.0 + 16.0,
+      ($game_player.real_y / 128.0 - $game_map.display_y / 128.0) * 32.0 + 32.0)
 
     File.open("prism3d-camera.txt", "ab") { |f| f.write(linha + "\r\n") }
   rescue StandardError
@@ -237,9 +236,17 @@ module PrismTest3D
     end
 
     if PLACA_DO_JOGADOR && $game_player
+      # `real_x`, nao `x`.
+      #
+      # O `x` e a celula logica, e no RPG Maker ela salta para o destino assim
+      # que o passo comeca: quem anda liso e o `real_x`, e e ele que posiciona
+      # o sprite (`Game_Character#screen_x`). Com `x` a placa saltava um tile
+      # inteiro na frente do jogador e esperava ele chegar.
+      #
       # Rente ao chao e um pouco mais alta que a grade, para nao brigar com ela
       # por profundidade quando as duas caem na mesma celula.
-      Prism3D.add_box($game_player.x + 0.5, 0.05, $game_player.y + 0.5,
+      Prism3D.add_box($game_player.real_x / 128.0 + 0.5, 0.05,
+                      $game_player.real_y / 128.0 + 0.5,
                       0.9, 0.06, 0.9, 0.0,
                       1.0, 0.95, 0.2)
     end
