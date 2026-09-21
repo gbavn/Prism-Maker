@@ -4,12 +4,22 @@
 # Desenha o mesmo modelo que o editor assa, so que como geometria viva dentro
 # do jogo, plantada na grade do mapa e rolando junto com ele.
 #
-# A camera nao e uma camera girada, e cisalhamento. O mapa do RPG Maker nao tem
-# fuga de ponto e nao comprime nada: um tile e um quadrado de 32 por 32 venha
-# ele do topo ou do rodape. Camera de verdade a 45 graus comprimiria a
-# profundidade, e o objeto iria subindo em relacao ao tile em que pisa conforme
-# andasse para o sul. Por isso o chao vai 1 para 1 com a tela e a altura sobe
-# reto, que e a convencao dos tiles altos do RPG Maker.
+# Ha duas cameras aqui, e a escolha e a constante PERSPECTIVA.
+#
+# A paralela e a original: nao e camera girada, e cisalhamento. O mapa do RPG
+# Maker nao tem fuga de ponto e nao comprime nada, um tile e um quadrado de 32
+# por 32 venha ele do topo ou do rodape. Ela esta medida e provada, com o ponto
+# do mundo caindo a menos de meio pixel de onde o motor poe o sprite.
+#
+# A de perspectiva veio depois, porque com a paralela o objeto 3D le como
+# adesivo colado na tela: nada nele muda de tamanho com a distancia. Nela o
+# chao tambem entra na conta. O elemento fica entre o tile de chao e o resto,
+# copia o mapa ja composto e redesenha ele como um plano inclinado, e o objeto
+# passa a usar a mesma camera. E o que os Pokemon de DS fazem, terreno em 3D
+# com personagem em cartao, e o laboratorio daqui veio de um deles.
+#
+# Enquanto os sprites nao entrarem na camera, casa e personagem continuam no
+# lugar antigo e vao discordar do chao. E esperado, e e o passo seguinte.
 #
 # O giro merece explicacao. O editor gira o modelo inteiro em volta do centro
 # da area no chao, e o motor gira cada caixa no proprio centro. Dao no mesmo
@@ -41,6 +51,27 @@ module PrismTest3D
     borda_sul = CELULA_DO_LAB[1] + (LAB_Z_MAX / UNIDADES_POR_CELULA)
     ((borda_sul - $game_map.display_y / 128.0) * 32 + 32).round
   end
+
+  # Perspectiva de verdade, em vez da projecao paralela do mapa.
+  #
+  # PITCH e a inclinacao da camera a partir do horizonte, em graus. FOV e o
+  # campo de visao: ele e o botao da intensidade, porque a distancia da camera
+  # e derivada dele para a fileira do meio encostar nas duas bordas da tela.
+  # Com FOV 2 a tela fica quase igual a de hoje, com 35 o trapezio e claro.
+  #
+  # CHAO liga a captura do mapa ja composto e o redesenho como plano. Ela so
+  # funciona com o elemento entre o tile de chao e o resto, que e o CHAO_Z.
+  PERSPECTIVA = true
+  PITCH = 65.0
+  FOV = 20.0
+  CHAO = true
+
+  # O z do elemento quando o chao esta ligado.
+  #
+  # O TilemapRenderer do Essentials da z zero ao tile de prioridade zero, que e
+  # o chao, e z crescente ao resto. Em z 1 o elemento desenha num instante em
+  # que so o chao foi pintado, e e isso que permite capturar so ele.
+  CHAO_Z = 1
 
   # Quanto um tile de altura sobe na tela. 1 e a convencao do RPG Maker.
   ALTURA_NA_TELA = 1.0
@@ -172,11 +203,24 @@ module PrismTest3D
     defined?(Prism3D) ? true : false
   end
 
-  def start
+  def start(viewport = nil)
     return unless running?
-    # Um z qualquer aqui: o `update` corrige todo quadro, pela borda sul do
-    # objeto no chao. O mapa ainda pode nem existir quando isto roda.
-    Prism3D.start(0)
+    @viewport = viewport
+    # O viewport importa, e muito. No mkxp-z um Viewport e ao mesmo tempo uma
+    # cena, com lista propria de z, e um elemento na cena de cima. Os tiles e
+    # os personagens vivem dentro do viewport do mapa, entao elemento na cena
+    # da tela nunca disputa z com eles: disputa com o viewport inteiro, que
+    # desenha de uma vez. Por isso o objeto ficava por cima de tudo, desse
+    # jeito que parece adesivo colado.
+    Prism3D.start(CHAO_Z, @viewport)
+
+    if PERSPECTIVA
+      Prism3D.perspective(PITCH, FOV)
+      Prism3D.ground = CHAO
+    else
+      Prism3D.perspective_off
+      Prism3D.ground = false
+    end
 
     # Carregar uma vez so: o modelo vive no motor enquanto o jogo viver.
     if @modelo.nil?
@@ -250,9 +294,10 @@ module PrismTest3D
                        $game_map.display_y / 128.0,
                        32.0, ALTURA_NA_TELA)
 
-    # Acompanha a rolagem: o z sai da posicao do objeto na tela, entao ele muda
-    # a cada quadro, do mesmo jeito que o dos personagens muda.
-    Prism3D.z = element_z
+    # Com o chao ligado o z fica preso no CHAO_Z: a captura precisa acontecer
+    # logo depois do tile de chao, e nao na altura do objeto. Sem chao, o z
+    # acompanha a rolagem, como o dos personagens.
+    Prism3D.z = (PERSPECTIVA && CHAO) ? CHAO_Z : element_z
 
     medir if MEDIR
 
@@ -339,8 +384,8 @@ module PrismTest3D
 end
 
 EventHandlers.add(:on_new_spriteset_map, :prism_test_3d,
-  proc { |_spriteset, _viewport|
-    PrismTest3D.protegido("start") { PrismTest3D.start }
+  proc { |_spriteset, viewport|
+    PrismTest3D.protegido("start") { PrismTest3D.start(viewport) }
   }
 )
 

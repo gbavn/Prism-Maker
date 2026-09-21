@@ -56,10 +56,10 @@ index 933a72d..f2785b0 100644
  if steamworks == true
 diff --git a/binding/prism3d-binding.cpp b/binding/prism3d-binding.cpp
 new file mode 100644
-index 0000000..93d813b
+index 0000000..66b7bde
 --- /dev/null
 +++ b/binding/prism3d-binding.cpp
-@@ -0,0 +1,311 @@
+@@ -0,0 +1,408 @@
 +/*
 +** prism3d-binding.cpp
 +**
@@ -69,7 +69,7 @@ index 0000000..93d813b
 +** caixas, limpar. Nada de arquivo de modelo, material, luz ou colisao. O
 +** caminhao do editor entra como as caixas que ele ja descreve, e so.
 +**
-+**   Prism3D.start(z = 0)
++**   Prism3D.start(z = 0, viewport = nil)
 +**   Prism3D.camera(ex, ey, ez, ax, ay, az, fov)
 +**   Prism3D.add_box(x, y, z, larg, alt, prof, yaw, r, g, b)
 +**   Prism3D.clear
@@ -77,11 +77,18 @@ index 0000000..93d813b
 +**   Prism3D.visible / Prism3D.visible=
 +**   Prism3D.stop
 +**
-+** O elemento vive enquanto o jogo vive. Ele entra na cena da tela, que o
-+** Graphics ja expoe por getScreen(), entao nada aqui precisa de estado global
-+** novo no motor.
++** O elemento vive enquanto o jogo vive.
++**
++** Sem viewport ele entra na cena da tela. Com viewport ele entra na cena do
++** proprio viewport, e isso muda tudo: no mkxp-z `Viewport` e ao mesmo tempo
++** uma `Scene`, com lista propria de z, e um `SceneElement` na cena de cima.
++** Os tiles e os personagens do Essentials vivem dentro do viewport do mapa,
++** entao um elemento na cena da tela nunca disputa z com eles, disputa com o
++** viewport inteiro, que desenha de uma vez. Para o objeto 3D passar atras de
++** uma casa, ele precisa estar na mesma lista que ela.
 +*/
 +
++#include "binding-types.h"
 +#include "binding-util.h"
 +#include "debugwriter.h"
 +#include "prism-trace.h"
@@ -89,6 +96,7 @@ index 0000000..93d813b
 +#include <string>
 +#include "graphics.h"
 +#include "prism3d.h"
++#include "viewport.h"
 +#include "sharedstate.h"
 +
 +static Prism3D::Element *element = 0;
@@ -104,13 +112,19 @@ index 0000000..93d813b
 +    RB_UNUSED_PARAM;
 +
 +    int z = 0;
-+    rb_get_args(argc, argv, "|i", &z RB_ARG_END);
++    VALUE viewportObj = Qnil;
++    rb_get_args(argc, argv, "|io", &z, &viewportObj RB_ARG_END);
 +
-+    prismTrace("BINDING: start");
++    Scene *cena = shState->graphics().getScreen();
++    if (!NIL_P(viewportObj))
++        cena = getPrivateDataCheck<Viewport>(viewportObj, ViewportType);
++
++    prismTrace(NIL_P(viewportObj) ? "BINDING: start na cena da tela"
++                                  : "BINDING: start dentro de um viewport");
 +
 +    GFX_LOCK;
 +    if (!element) {
-+        element = new Prism3D::Element(*shState->graphics().getScreen(), z);
++        element = new Prism3D::Element(*cena, z);
 +        if (!element->renderer().init()) {
 +            delete element;
 +            element = 0;
@@ -118,6 +132,7 @@ index 0000000..93d813b
 +            rb_raise(rb_eRuntimeError, "Prism3D: o renderizador nao subiu");
 +        }
 +    } else {
++        element->setScene(*cena);
 +        element->setZ(z);
 +    }
 +    GFX_UNLOCK;
@@ -177,6 +192,84 @@ index 0000000..93d813b
 +    GFX_UNLOCK;
 +
 +    return Qnil;
++}
++
++/*
++ * Troca a projecao paralela do mapa por perspectiva de verdade.
++ *
++ * `pitch` e a inclinacao a partir do horizonte, em graus. `fov` pequeno com
++ * `distancia` grande tende a projecao paralela, entao perspectiva fraca sai
++ * por construcao, sem misturar matriz.
++ */
++RB_METHOD(prism3DPerspective) {
++    RB_UNUSED_PARAM;
++
++    double pitch = 60.0, fov = 30.0, distancia = 14.0;
++    rb_get_args(argc, argv, "|fff", &pitch, &fov, &distancia RB_ARG_END);
++
++    GFX_LOCK;
++    needElement()->renderer().setMapPerspective((float)pitch, (float)fov,
++                                                (float)distancia);
++    GFX_UNLOCK;
++
++    return Qnil;
++}
++
++RB_METHOD(prism3DPerspectiveOff) {
++    RB_UNUSED_PARAM;
++
++    GFX_LOCK;
++    needElement()->renderer().setMapPerspectiveOff();
++    GFX_UNLOCK;
++
++    return Qnil;
++}
++
++/* Liga o plano de chao, que captura o mapa ja composto e o reprojeta. */
++RB_METHOD(prism3DSetGround) {
++    RB_UNUSED_PARAM;
++
++    bool on;
++    rb_get_args(argc, argv, "b", &on RB_ARG_END);
++
++    GFX_LOCK;
++    needElement()->renderer().setGround(on);
++    GFX_UNLOCK;
++
++    return rb_bool_new(on);
++}
++
++/*
++ * Onde um ponto do mundo cai na tela.
++ *
++ * Devolve [x, y, escala], em que a escala e quantos pixels vale uma unidade de
++ * altura naquele ponto. E o que o Ruby precisa para o personagem continuar
++ * sendo um cartao 2D, so que colocado pela camera 3D. Devolve nil se o ponto
++ * estiver atras da camera.
++ */
++RB_METHOD(prism3DProject) {
++    RB_UNUSED_PARAM;
++
++    double x, y, z;
++    rb_get_args(argc, argv, "fff", &x, &y, &z RB_ARG_END);
++
++    Prism3D::Element *el = needElement();
++    float sx = 0, sy = 0, escala = 0;
++
++    GFX_LOCK;
++    const bool ok = el->renderer().project((float)x, (float)y, (float)z,
++                                           el->screenWidth(), el->screenHeight(),
++                                           sx, sy, escala);
++    GFX_UNLOCK;
++
++    if (!ok)
++        return Qnil;
++
++    VALUE saida = rb_ary_new2(3);
++    rb_ary_push(saida, rb_float_new(sx));
++    rb_ary_push(saida, rb_float_new(sy));
++    rb_ary_push(saida, rb_float_new(escala));
++    return saida;
 +}
 +
 +RB_METHOD(prism3DAddBox) {
@@ -360,6 +453,10 @@ index 0000000..93d813b
 +    _rb_define_module_function(module, "stop", prism3DStop);
 +    _rb_define_module_function(module, "camera", prism3DCamera);
 +    _rb_define_module_function(module, "map_camera", prism3DMapCamera);
++    _rb_define_module_function(module, "perspective", prism3DPerspective);
++    _rb_define_module_function(module, "perspective_off", prism3DPerspectiveOff);
++    _rb_define_module_function(module, "ground=", prism3DSetGround);
++    _rb_define_module_function(module, "project", prism3DProject);
 +    _rb_define_module_function(module, "add_box", prism3DAddBox);
 +    _rb_define_module_function(module, "load_model", prism3DLoadModel);
 +    _rb_define_module_function(module, "add_model", prism3DAddModel);
@@ -647,7 +744,7 @@ index b66f322..8f87e66 100644
  	}
  	
 diff --git a/src/display/gl/gl-fun.cpp b/src/display/gl/gl-fun.cpp
-index 3dd776b..1a89381 100644
+index 3dd776b..9ed9d97 100644
 --- a/src/display/gl/gl-fun.cpp
 +++ b/src/display/gl/gl-fun.cpp
 @@ -20,6 +20,7 @@
@@ -658,7 +755,7 @@ index 3dd776b..1a89381 100644
  
  #include "boost-hash.h"
  #include "exception.h"
-@@ -204,4 +205,41 @@ void initGLFunctions()
+@@ -204,4 +205,42 @@ void initGLFunctions()
      
      if (!gles || glMajor >= 3 || HAVE_EXT(OES_texture_npot))
          gl.npot_repeat = true;
@@ -669,7 +766,7 @@ index 3dd776b..1a89381 100644
 +     * O carregador acima guarda o que SDL_GL_GetProcAddress devolve, sem
 +     * checar: funcao que o driver nao tem vira ponteiro nulo, e chamar
 +     * ponteiro nulo derruba o processo na hora, com violacao de acesso e sem
-+     * mensagem nenhuma. Como sao doze funcoes novas, cada uma e um jeito de
++     * mensagem nenhuma. Como sao treze funcoes novas, cada uma e um jeito de
 +     * cair em silencio. Aqui cada ausencia vira uma linha no rastro, com nome.
 +     */
 +#define PRISM_CHECK_GL(name) \
@@ -693,18 +790,19 @@ index 3dd776b..1a89381 100644
 +    PRISM_CHECK_GL(RenderbufferStorage)
 +    PRISM_CHECK_GL(FramebufferRenderbuffer)
 +    PRISM_CHECK_GL(CheckFramebufferStatus)
++    PRISM_CHECK_GL(CopyTexSubImage2D)
 +
 +#undef PRISM_CHECK_GL
 +
 +    gl.prism3D = prismGLComplete;
-+    prismTrace(prismGLComplete ? "GL: as doze funcoes do Prism3D estao todas presentes"
++    prismTrace(prismGLComplete ? "GL: as treze funcoes do Prism3D estao todas presentes"
 +                               : "GL: falta funcao, o passo 3D fica desligado");
  }
 diff --git a/src/display/gl/gl-fun.h b/src/display/gl/gl-fun.h
-index 634da66..dd382b2 100644
+index 634da66..54fe766 100644
 --- a/src/display/gl/gl-fun.h
 +++ b/src/display/gl/gl-fun.h
-@@ -38,6 +38,15 @@ typedef void (APIENTRYP _PFNGLGETINTEGERVPROC) (GLenum pname, GLint *params);
+@@ -38,6 +38,16 @@ typedef void (APIENTRYP _PFNGLGETINTEGERVPROC) (GLenum pname, GLint *params);
  typedef void (APIENTRYP _PFNGLPIXELSTOREIPROC) (GLenum pname, GLint param);
  typedef void (APIENTRYP _PFNGLREADPIXELSPROC) (GLint x, GLint y, GLsizei width, GLsizei height, GLenum format, GLenum type, GLvoid *pixels);
  typedef void (APIENTRYP _PFNGLENABLEPROC) (GLenum cap);
@@ -717,10 +815,11 @@ index 634da66..dd382b2 100644
 +typedef void (APIENTRYP _PFNGLCULLFACEPROC) (GLenum mode);
 +typedef void (APIENTRYP _PFNGLFRONTFACEPROC) (GLenum mode);
 +typedef void (APIENTRYP _PFNGLUNIFORM3FPROC) (GLint location, GLfloat v0, GLfloat v1, GLfloat v2);
++typedef void (APIENTRYP _PFNGLCOPYTEXSUBIMAGE2DPROC) (GLenum target, GLint level, GLint xoffset, GLint yoffset, GLint x, GLint y, GLsizei width, GLsizei height);
  typedef void (APIENTRYP _PFNGLDISABLEPROC) (GLenum cap);
  typedef void (APIENTRYP _PFNGLSCISSORPROC) (GLint x, GLint y, GLsizei width, GLsizei height);
  typedef void (APIENTRYP _PFNGLVIEWPORTPROC) (GLint x, GLint y, GLsizei width, GLsizei height);
-@@ -106,8 +115,35 @@ typedef void (APIENTRYP _PFNGLGENFRAMEBUFFERSPROC) (GLsizei n, GLuint* framebuff
+@@ -106,8 +116,35 @@ typedef void (APIENTRYP _PFNGLGENFRAMEBUFFERSPROC) (GLsizei n, GLuint* framebuff
  typedef void (APIENTRYP _PFNGLDELETEFRAMEBUFFERSPROC) (GLsizei n, const GLuint* framebuffers);
  typedef void (APIENTRYP _PFNGLBINDFRAMEBUFFERPROC) (GLenum target, GLuint framebuffer);
  typedef void (APIENTRYP _PFNGLFRAMEBUFFERTEXTURE2DPROC) (GLenum target, GLenum attachment, GLenum textarget, GLuint texture, GLint level);
@@ -756,7 +855,7 @@ index 634da66..dd382b2 100644
  /* Vertex array object */
  typedef void (APIENTRYP _PFNGLGENVERTEXARRAYSPROC) (GLsizei n, GLuint* arrays);
  typedef void (APIENTRYP _PFNGLDELETEVERTEXARRAYSPROC) (GLsizei n, const GLuint* arrays);
-@@ -136,6 +172,12 @@ typedef void (APIENTRYP _PFNGLRELEASESHADERCOMPILERPROC) (void);
+@@ -136,6 +173,12 @@ typedef void (APIENTRYP _PFNGLRELEASESHADERCOMPILERPROC) (void);
  	GL_FUN(ReadPixels, _PFNGLREADPIXELSPROC) \
  	GL_FUN(Enable, _PFNGLENABLEPROC) \
  	GL_FUN(Disable, _PFNGLDISABLEPROC) \
@@ -769,7 +868,15 @@ index 634da66..dd382b2 100644
  	GL_FUN(Scissor, _PFNGLSCISSORPROC) \
  	GL_FUN(Viewport, _PFNGLVIEWPORTPROC) \
  	GL_FUN(BlendFunc, _PFNGLBLENDFUNCPROC) \
-@@ -177,6 +219,7 @@ typedef void (APIENTRYP _PFNGLRELEASESHADERCOMPILERPROC) (void);
+@@ -148,6 +191,7 @@ typedef void (APIENTRYP _PFNGLRELEASESHADERCOMPILERPROC) (void);
+ 	GL_FUN(BindTexture, _PFNGLBINDTEXTUREPROC) \
+ 	GL_FUN(TexImage2D, _PFNGLTEXIMAGE2DPROC) \
+ 	GL_FUN(TexSubImage2D, _PFNGLTEXSUBIMAGE2DPROC) \
++	GL_FUN(CopyTexSubImage2D, _PFNGLCOPYTEXSUBIMAGE2DPROC) \
+ 	GL_FUN(TexParameteri, _PFNGLTEXPARAMETERIPROC) \
+ 	GL_FUN(ActiveTexture, _PFNGLACTIVETEXTUREPROC) \
+ 	GL_FUN(GenerateMipmap, _PFNGLGENERATEMIPMAPPROC) \
+@@ -177,6 +221,7 @@ typedef void (APIENTRYP _PFNGLRELEASESHADERCOMPILERPROC) (void);
  	GL_FUN(GetUniformLocation, _PFNGLGETUNIFORMLOCATIONPROC) \
  	GL_FUN(Uniform1f, _PFNGLUNIFORM1FPROC) \
  	GL_FUN(Uniform2f, _PFNGLUNIFORM2FPROC) \
@@ -777,7 +884,7 @@ index 634da66..dd382b2 100644
  	GL_FUN(Uniform4f, _PFNGLUNIFORM4FPROC) \
  	GL_FUN(Uniform1i, _PFNGLUNIFORM1IPROC) \
  	GL_FUN(Uniform1iv, _PFNGLUNIFORM1IVPROC) \
-@@ -195,7 +238,13 @@ typedef void (APIENTRYP _PFNGLRELEASESHADERCOMPILERPROC) (void);
+@@ -195,7 +240,13 @@ typedef void (APIENTRYP _PFNGLRELEASESHADERCOMPILERPROC) (void);
  	GL_FUN(GenFramebuffers, _PFNGLGENFRAMEBUFFERSPROC) \
  	GL_FUN(DeleteFramebuffers, _PFNGLDELETEFRAMEBUFFERSPROC) \
  	GL_FUN(BindFramebuffer, _PFNGLBINDFRAMEBUFFERPROC) \
@@ -792,7 +899,7 @@ index 634da66..dd382b2 100644
  
  #define GL_FBO_BLIT_FUN \
  	GL_FUN(BlitFramebuffer, _PFNGLBLITFRAMEBUFFERPROC)
-@@ -227,6 +276,8 @@ struct GLFunctions
+@@ -227,6 +278,8 @@ struct GLFunctions
  
  	bool glsles;
  	bool unpack_subimage;
@@ -1093,10 +1200,10 @@ index 0000000..09ea23b
 +#endif // PRISM3D_MATH_H
 diff --git a/src/display/gl/prism3d.cpp b/src/display/gl/prism3d.cpp
 new file mode 100644
-index 0000000..d313e8a
+index 0000000..e77c64a
 --- /dev/null
 +++ b/src/display/gl/prism3d.cpp
-@@ -0,0 +1,828 @@
+@@ -0,0 +1,1063 @@
 +/*
 +** prism3d.cpp
 +**
@@ -1171,6 +1278,10 @@ index 0000000..d313e8a
 +uniform sampler2D tex;
 +uniform float textured;
 +
++/* O chao e a imagem do mapa ja pronta, com a arte e a sombra que o tileset
++   tem. Iluminar de novo escureceria o desenho do jogo. */
++uniform float unlit;
++
 +varying vec3 vNormal;
 +varying vec2 vUv;
 +
@@ -1186,11 +1297,13 @@ index 0000000..d313e8a
 +    float alpha = mix(1.0, amostra.a, textured);
 +
 +    /* Recorte em vez de mistura: textura de jogo de DS usa transparencia
-+       binaria, e misturar exigiria ordenar por profundidade a cada quadro. */
-+    if (alpha < 0.5)
++       binaria, e misturar exigiria ordenar por profundidade a cada quadro.
++       No chao nao vale: o alfa do alvo copiado nao quer dizer nada. */
++    if (unlit < 0.5 && alpha < 0.5)
 +        discard;
 +
-+    gl_FragColor = vec4(base * (0.45 + 0.55 * lambert), 1.0);
++    float sombra = mix(0.45 + 0.55 * lambert, 1.0, unlit);
++    gl_FragColor = vec4(base * sombra, 1.0);
 +}
 +)";
 +
@@ -1662,6 +1775,7 @@ index 0000000..d313e8a
 +    uniformViewProjection = gl.GetUniformLocation(program, "viewProjection");
 +    uniformColor = gl.GetUniformLocation(program, "color");
 +    uniformTextured = gl.GetUniformLocation(program, "textured");
++    uniformUnlit = gl.GetUniformLocation(program, "unlit");
 +
 +    /* A textura de um pixel branco. Existe para o caminho sem textura usar o
 +       mesmo shader: sem ela seriam dois programas, ou um ramo no shader, que
@@ -1739,6 +1853,58 @@ index 0000000..d313e8a
 +    vao.ibo = ibo;
 +    GLMeta::vaoInit(vao);
 +
++    /*
++     * O quadrado do chao, no plano Y zero, de zero a um nos dois eixos.
++     *
++     * A UV ja vai embutida e invertida no eixo vertical de proposito: a
++     * textura copiada do alvo tem a origem no canto de baixo, como todo
++     * framebuffer de OpenGL, enquanto a fileira de cima da tela e o Z menor
++     * do mundo. Sem essa inversao o mapa sairia espelhado no sentido norte
++     * e sul.
++     */
++    {
++        /*
++         * O plano passa um pouco do quadro capturado, de proposito.
++         *
++         * O chao fica inclinado em relacao a camera, entao a profundidade dele
++         * encurta na projecao e sobra faixa vazia em cima e embaixo. Medindo
++         * com inclinacao de 65 graus, a sobra e de uns 19 pixels de cada lado.
++         * Esticar o plano e deixar a textura grampeada na borda preenche isso
++         * arrastando a fileira de fora, o que le como chao continuando. Faixa
++         * preta perto do jogador leria como defeito.
++         */
++        const float sobraZ = 0.15f, sobraX = 0.05f;
++        struct Vertex { float x, y, z, nx, ny, nz, u, v; };
++        const Vertex quad[4] = {
++            { -sobraX, 0, -sobraZ,  0, 1, 0,  -sobraX, 1 + sobraZ },
++            { 1 + sobraX, 0, -sobraZ,  0, 1, 0,  1 + sobraX, 1 + sobraZ },
++            { 1 + sobraX, 0, 1 + sobraZ,  0, 1, 0,  1 + sobraX, -sobraZ },
++            { -sobraX, 0, 1 + sobraZ,  0, 1, 0,  -sobraX, -sobraZ },
++        };
++        const GLushort idx[6] = { 0, 1, 2, 0, 2, 3 };
++
++        groundVbo = VBO::gen();
++        groundIbo = IBO::gen();
++        VBO::bind(groundVbo);
++        VBO::uploadData(sizeof(quad), quad);
++        IBO::bind(groundIbo);
++        IBO::uploadData(sizeof(idx), idx);
++        VBO::unbind();
++        IBO::unbind();
++
++        static const VertexAttribute quadAttribs[] = {
++            { Shader::Position, 3, GL_FLOAT, (const GLvoid *)0 },
++            { Shader::TexCoord, 3, GL_FLOAT, (const GLvoid *)(sizeof(float) * 3) },
++            { Shader::Color,    2, GL_FLOAT, (const GLvoid *)(sizeof(float) * 6) }
++        };
++        groundVao.attr = quadAttribs;
++        groundVao.attrCount = 3;
++        groundVao.vertSize = sizeof(Vertex);
++        groundVao.vbo = groundVbo;
++        groundVao.ibo = groundIbo;
++        GLMeta::vaoInit(groundVao);
++    }
++
 +    prismTrace("RENDER: shader e cubo prontos");
 +    return true;
 +}
@@ -1769,6 +1935,13 @@ index 0000000..d313e8a
 +        return;
 +
 +    TEX::del(blank);
++    if (groundTexW > 0)
++        TEX::del(groundTex);
++    groundTexW = groundTexH = 0;
++
++    GLMeta::vaoFini(groundVao);
++    IBO::del(groundIbo);
++    VBO::del(groundVbo);
 +
 +    GLMeta::vaoFini(vao);
 +    IBO::del(ibo);
@@ -1794,8 +1967,177 @@ index 0000000..d313e8a
 +    mapCamera = true;
 +}
 +
++void Renderer::setMapPerspective(float pitchDegrees, float fovDegrees,
++                                 float distance) {
++    /* 89 e nao 90: a prumo o alvo fica em cima do olho e o vetor de cima fica
++       paralelo a direcao de visao, o que quebra o lookAt. */
++    perspPitch = pitchDegrees < 1.0f ? 1.0f
++               : (pitchDegrees > 89.0f ? 89.0f : pitchDegrees);
++    perspFov = fovDegrees > 0.5f ? fovDegrees : 0.5f;
++    /* Zero ou menos quer dizer automatica, que e o caso normal. */
++    perspDistance = distance;
++    mapPerspective = true;
++}
++
++/*
++** A matriz da camera do mapa, uma so para tudo.
++**
++** Chao, objeto e `project` precisam concordar na virgula, entao nenhum deles
++** monta matriz por conta propria: os tres chamam daqui.
++*/
++Mat4 Renderer::mapViewProjection(int width, int height) const {
++    const float tilesWide = (float)width / mapTilePixels;
++    const float tilesHigh = (float)height / mapTilePixels;
++
++    if (!mapPerspective) {
++        /* Alcance folgado: o maior mapa do RPG Maker XP tem 500 tiles de
++           lado, e a profundidade so precisa caber nele. */
++        return Mat4::mapOblique(tilesWide, tilesHigh,
++                                mapScrollX, mapScrollZ, mapHeight, 1024.0f);
++    }
++
++    /* O alvo e o centro da area visivel do mapa, no chao. A camera fica ao sul
++       dele, que e o Z maior, e acima. Olhar do sul e o que poe o horizonte no
++       alto da tela e mantem o norte ao fundo, como no mapa 2D. */
++    const Vec3 alvo(mapScrollX + tilesWide * 0.5f, 0.0f,
++                    mapScrollZ + tilesHigh * 0.5f);
++
++    const float aspect = height > 0 ? (float)width / (float)height : 1.0f;
++    const float meioFov = perspFov * 0.5f * 3.14159265f / 180.0f;
++
++    /*
++     * A distancia sai do campo de visao, e nao de um numero solto.
++     *
++     * O eixo X do mapa fica perpendicular a direcao de visao, porque a camera
++     * so se inclina, nunca gira de lado. Entao ele nao sofre encurtamento, e a
++     * largura visivel na altura do alvo e 2 * d * tan(fov/2) * proporcao.
++     * Igualando isso a largura do quadro, a fileira do meio encosta nas duas
++     * bordas da tela em qualquer campo de visao.
++     *
++     * E isso que faz perspectiva fraca funcionar como botao: com `fov` pequeno
++     * a camera se afasta sozinha e a imagem tende a de hoje, em vez de o chao
++     * encolher no meio da tela.
++     */
++    float distancia = perspDistance;
++    if (distancia <= 0.0f)
++        distancia = tilesWide / (2.0f * std::tan(meioFov) * aspect);
++
++    const float rad = perspPitch * 3.14159265f / 180.0f;
++    const Vec3 olho(alvo.x,
++                    alvo.y + distancia * std::sin(rad),
++                    alvo.z + distancia * std::cos(rad));
++
++    /* O plano de fundo acompanha a distancia, senao camera longe, que e o que
++       perspectiva fraca pede, corta o mapa inteiro. */
++    const Mat4 projecao = Mat4::perspective(perspFov * 3.14159265f / 180.0f,
++                                            aspect, 0.1f, distancia * 4.0f + 64.0f);
++    return projecao * Mat4::lookAt(olho, alvo, Vec3(0, 1, 0));
++}
++
++bool Renderer::project(float x, float y, float z, int width, int height,
++                       float &outX, float &outY, float &outScale) const {
++    const Mat4 m = mapViewProjection(width, height);
++
++    /* Duas projecoes: o ponto, e o mesmo ponto uma unidade mais alto. A
++       distancia entre os dois na tela e a escala ali, que e o que o sprite
++       precisa para encolher com a distancia. */
++    float px[2], py[2];
++    for (int i = 0; i < 2; ++i) {
++        const float vy = y + (float)i;
++        const float cx = m.m[0]*x + m.m[4]*vy + m.m[8]*z  + m.m[12];
++        const float cy = m.m[1]*x + m.m[5]*vy + m.m[9]*z  + m.m[13];
++        const float cw = m.m[3]*x + m.m[7]*vy + m.m[11]*z + m.m[15];
++
++        if (cw <= 0.0001f)
++            return false;
++
++        px[i] = (cx / cw + 1.0f) * 0.5f * (float)width;
++        py[i] = (1.0f - cy / cw) * 0.5f * (float)height;
++    }
++
++    outX = px[0];
++    outY = py[0];
++    outScale = py[0] - py[1];
++    return true;
++}
++
++void Renderer::ensureGroundTexture(int width, int height) {
++    if (groundTexW == width && groundTexH == height)
++        return;
++
++    if (groundTexW > 0)
++        TEX::del(groundTex);
++
++    groundTex = TEX::gen();
++    TEX::bind(groundTex);
++    TEX::allocEmpty(width, height);
++    /* Filtro suave aqui, ao contrario do resto: o chao e o unico lugar em que
++       a imagem e esticada de verdade pela perspectiva, e vizinho mais proximo
++       viraria escada nas fileiras do fundo. */
++    TEX::setSmooth(true);
++    TEX::setRepeat(false);
++
++    groundTexW = width;
++    groundTexH = height;
++}
++
++/*
++** Captura o mapa ja composto e redesenha ele como um plano.
++**
++** Isto so funciona por causa da ordem de z da cena. O TilemapRenderer do
++** Essentials da z zero ao tile de prioridade zero, que e o chao, e z crescente
++** ao resto. Como a cena compoe em ordem de z, um elemento em z 1 desenha num
++** instante em que so o chao foi pintado. A separacao entre chao e coisa alta
++** sai da propria ordenacao, sem reimplementar tilemap nenhum.
++**
++** O preco e que limpar a cor apaga tambem o que estiver abaixo de z zero,
++** como reflexo e panorama.
++*/
++void Renderer::drawGround(int width, int height) {
++    ensureGroundTexture(width, height);
++
++    TEX::bind(groundTex);
++    gl.CopyTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, 0, 0, width, height);
++
++    /* glClear respeita a tesoura, e o ciclo de desenho deixa ela ligada. */
++    glState.scissorTest.pushSet(false);
++    gl.ClearColor(0.0f, 0.0f, 0.0f, 1.0f);
++    gl.Clear(GL_COLOR_BUFFER_BIT);
++    glState.scissorTest.pop();
++
++    const float tilesWide = (float)width / mapTilePixels;
++    const float tilesHigh = (float)height / mapTilePixels;
++
++    const Mat4 model = Mat4::translation(Vec3(mapScrollX, 0.0f, mapScrollZ)) *
++                       Mat4::scale(Vec3(tilesWide, 1.0f, tilesHigh));
++
++    /* Sem descarte de face: o plano e um so, e errar o lado dele por causa da
++       ordem dos vertices sumiria com o chao inteiro sem dizer por que. */
++    gl.Disable(GL_CULL_FACE);
++
++    gl.UniformMatrix4fv(uniformModel, 1, GL_FALSE, model.m);
++    gl.Uniform3f(uniformColor, 1.0f, 1.0f, 1.0f);
++    gl.Uniform1f(uniformTextured, 1.0f);
++    gl.Uniform1f(uniformUnlit, 1.0f);
++    gl.ActiveTexture(GL_TEXTURE0);
++    TEX::bind(groundTex);
++
++    GLMeta::vaoBind(groundVao);
++    gl.DrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_SHORT, 0);
++    GLMeta::vaoUnbind(groundVao);
++
++    gl.Uniform1f(uniformUnlit, 0.0f);
++    gl.Enable(GL_CULL_FACE);
++}
++
 +void Renderer::draw(int width, int height, bool clearDepth) {
-+    if (!program || (boxes.empty() && placements.empty()))
++    if (!program)
++        return;
++
++    /* O chao e desenho por si so: ele aparece mesmo sem objeto nenhum na
++       cena. */
++    const bool comChao = groundEnabled && mapCamera && mapPerspective;
++    if (boxes.empty() && placements.empty() && !comChao)
 +        return;
 +
 +    /*
@@ -1845,12 +2187,7 @@ index 0000000..d313e8a
 +
 +    if (mapCamera)
 +    {
-+        /* Alcance folgado: o maior mapa do RPG Maker XP tem 500 tiles de
-+           lado, e a profundidade so precisa caber nele. */
-+        viewProjection = Mat4::mapOblique((float)width / mapTilePixels,
-+                                          (float)height / mapTilePixels,
-+                                          mapScrollX, mapScrollZ,
-+                                          mapHeight, 1024.0f);
++        viewProjection = mapViewProjection(width, height);
 +    }
 +    else
 +    {
@@ -1863,6 +2200,11 @@ index 0000000..d313e8a
 +    glState.program.pushSet(program);
 +    gl.UniformMatrix4fv(uniformViewProjection, 1, GL_FALSE, viewProjection.m);
 +    gl.Uniform1i(gl.GetUniformLocation(program, "tex"), 0);
++    gl.Uniform1f(uniformUnlit, 0.0f);
++
++    /* O chao vem antes de tudo: ele e o fundo em que o resto pisa. */
++    if (comChao)
++        drawGround(width, height);
 +
 +    /* As caixas, que nunca tem textura. */
 +    if (!boxes.empty()) {
@@ -1927,10 +2269,10 @@ index 0000000..d313e8a
 +} // namespace Prism3D
 diff --git a/src/display/gl/prism3d.h b/src/display/gl/prism3d.h
 new file mode 100644
-index 0000000..55bc9b4
+index 0000000..cdea623
 --- /dev/null
 +++ b/src/display/gl/prism3d.h
-@@ -0,0 +1,193 @@
+@@ -0,0 +1,243 @@
 +/*
 +** prism3d.h
 +**
@@ -2049,6 +2391,34 @@ index 0000000..55bc9b4
 +                      float heightOnScreen);
 +
 +    /**
++     * Troca a projecao paralela do mapa por perspectiva de verdade.
++     *
++     * A camera fica ao sul e acima do centro da area visivel, olhando para
++     * ele. `pitchDegrees` e a inclinacao a partir do horizonte, entao 90 seria
++     * de cima a prumo, e por isso fica de fora. `distance` e em tiles.
++     *
++     * Nao existe mistura entre as duas projecoes, porque misturar matriz e
++     * matematicamente torto. Perspectiva fraca sai de graca por construcao:
++     * `fov` pequeno com `distance` grande tende a projecao paralela.
++     */
++    void setMapPerspective(float pitchDegrees, float fovDegrees, float distance);
++    void setMapPerspectiveOff() { mapPerspective = false; }
++
++    /** Liga o plano de chao, que captura o mapa ja composto e o reprojeta. */
++    void setGround(bool on) { groundEnabled = on; }
++
++    /**
++     * Onde um ponto do mundo cai na tela, e quanto vale uma unidade de altura
++     * ali, em pixel.
++     *
++     * E o que o Ruby precisa para reposicionar sprite: o personagem continua
++     * sendo um cartao 2D, so que colocado pela camera 3D. Devolve false se o
++     * ponto estiver atras da camera.
++     */
++    bool project(float x, float y, float z, int width, int height,
++                 float &outX, float &outY, float &outScale) const;
++
++    /**
 +     * Desenha, dentro do ciclo de desenho do motor.
 +     *
 +     * `width` e `height` sao os do alvo corrente, so para a proporcao da
@@ -2075,11 +2445,29 @@ index 0000000..55bc9b4
 +    int uniformViewProjection = -1;
 +    int uniformColor = -1;
 +    int uniformTextured = -1;
++    int uniformUnlit = -1;
++
++    /* O quadrado unitario do chao, no plano Y zero. */
++    GLMeta::VAO groundVao;
++    VBO::ID groundVbo;
++    IBO::ID groundIbo;
++
++    /* A copia do mapa ja composto, do tamanho do alvo. */
++    TEX::ID groundTex;
++    int groundTexW = 0, groundTexH = 0;
++    bool groundEnabled = false;
++
++    /** A matriz que vale para tudo: chao, objetos e `project`. */
++    Mat4 mapViewProjection(int width, int height) const;
++    void ensureGroundTexture(int width, int height);
++    void drawGround(int width, int height);
 +
 +    Mat4 view = Mat4::identity();
 +    bool mapCamera = false;
 +    float mapScrollX = 0.0f, mapScrollZ = 0.0f;
 +    float mapTilePixels = 32.0f, mapHeight = 1.0f;
++    bool mapPerspective = false;
++    float perspPitch = 60.0f, perspFov = 30.0f, perspDistance = 14.0f;
 +    float fov = 45.0f;
 +    Vec3 eye = Vec3(0, 3, 8);
 +    Vec3 target = Vec3(0, 0, 0);
@@ -2111,6 +2499,10 @@ index 0000000..55bc9b4
 +
 +    /* Nao ha nada preguicoso para resolver antes de ler propriedade daqui. */
 +    void aboutToAccess() const override {}
++
++    /* O tamanho do alvo, que o binding precisa para projetar ponto. */
++    int screenWidth() const { return width; }
++    int screenHeight() const { return height; }
 +
 +protected:
 +    void draw() override;

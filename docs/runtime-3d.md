@@ -221,6 +221,99 @@ O que funciona, e está no patch como `src/util/prism-trace.h` e `.cpp`:
 
 ---
 
+## 1.4. O viewport é uma cena, e isso decide a ordenação
+
+Custou uma rodada inteira de confusão, então fica escrito.
+
+No mkxp-z, `Viewport` é `public Scene, public SceneElement` ao mesmo tempo
+(`src/display/viewport.h:32`). Ele é uma cena, com lista própria de z, e também
+um elemento na cena de cima.
+
+O Essentials põe os tiles, os eventos e o jogador dentro de um viewport só, o
+`@@viewport1` do `Spriteset_Map`, criado com `z = 0`. Então um elemento posto
+na cena da **tela** nunca disputa z com um tile: ele disputa com o viewport
+inteiro, que desenha de uma vez. Mudar o z desse elemento não muda nada
+visível, por mais certo que o número esteja.
+
+Para o objeto 3D passar atrás de uma casa, ele precisa estar na mesma lista que
+ela, ou seja dentro do viewport. O `SceneElement::setScene` faz isso, e o
+`setZ` já reordena sozinho, porque ele chama `Scene::reinsert`
+(`scene.cpp:139-148`).
+
+O `:on_new_spriteset_map` do Essentials já entrega esse viewport como segundo
+argumento, então do lado do Ruby não custa nada.
+
+**O z do mundo 2D do Essentials**, para calibrar contra ele:
+
+| o quê | z |
+|---|---|
+| reflexo | -100 |
+| tile de prioridade zero, o chão | 0 |
+| tile alto | `y * 32 + prioridade * 32 + 33` |
+| personagem e evento | `screen_y_ground`, de 0 a 384 |
+| `always_on_top` | 999 |
+
+Tudo cabe entre -100 e mil. Elemento em 5000, como o ensaio tinha, fica acima
+de tudo para sempre, e objeto que nunca passa atrás de nada não lê como objeto
+na cena: lê como adesivo colado na tela.
+
+---
+
+## 1.5. Perspectiva sem reimplementar o tilemap
+
+O Essentials **não usa o `Tilemap` do motor**. Ele tem um `TilemapRenderer` em
+Ruby que cria um `TileSprite` por tile e por camada
+(`072_TilemapRenderer.rb`). Então "pôr o chão em geometria" não é mexer numa
+classe do motor: é fazer o lado C++ aprender um mapa que só o Ruby conhece.
+
+Só que a separação entre chão e coisa alta já existe, de graça, na ordenação.
+O `refresh_tile_z` dá `z = 0` ao tile de prioridade zero e z crescente ao
+resto, e a cena compõe em ordem de z. Logo, um elemento em **z = 1** desenha
+num instante em que só o chão foi pintado.
+
+É nisso que o plano de chão se apoia: ele copia o alvo corrente com
+`CopyTexSubImage2D`, limpa, e redesenha a imagem como um plano em `Y = 0`
+cobrindo o retângulo do mundo que estava na tela. Nenhum tilemap é
+reimplementado.
+
+Três coisas que valem saber:
+
+- **a distância da câmera é derivada do campo de visão**, e não um número
+  solto. O eixo X do mapa fica perpendicular à direção de visão, porque a
+  câmera só inclina e nunca gira de lado, então ele não sofre encurtamento, e
+  a largura visível na altura do alvo é `2 * d * tan(fov/2) * proporção`.
+  Igualando isso à largura do quadro sai `d = tilesWide / (2 tan(fov/2) prop)`,
+  e a fileira do meio encosta nas duas bordas em qualquer campo de visão. É
+  isso que faz perspectiva fraca virar botão: com `fov` pequeno a câmera se
+  afasta sozinha e a imagem tende à paralela de antes, em vez de o chão
+  encolher no meio da tela. Medido: com `fov` 2 os cantos saem em 1,9 e 510,1
+  no topo contra -1,9 e 513,9 na base, que é quase um retângulo, e com `fov` 35
+  saem 30,1 e 481,9 contra -39,4 e 551,4, que é o trapézio;
+- **o plano passa um pouco do quadro capturado**, com a textura grampeada na
+  borda. O chão inclinado encurta na projeção, e com 65 graus sobra faixa de
+  uns 19 pixels em cima e embaixo. Arrastar a fileira de fora lê como chão
+  continuando; faixa preta perto do jogador leria como defeito;
+- **misturar as duas matrizes seria torto**, e por isso não se faz. Paralela e
+  perspectiva são projeções diferentes, e interpolar os elementos delas não dá
+  nenhuma projeção válida no meio do caminho. O botão é o campo de visão, que
+  degenera na paralela por construção.
+
+Preços aceitos, que não são defeito e sim a escolha:
+
+- **o chão acaba no horizonte.** A imagem capturada só tem os doze tiles que
+  cabem na tela, e câmera inclinada enxerga mais longe. A saída definitiva é o
+  Ruby desenhar o mapa numa área maior que a tela;
+- **a arte estica embaixo.** O tileset foi desenhado para projeção paralela;
+- **limpar a cor apaga o que estiver abaixo de z zero**, como reflexo e
+  panorama;
+- **enquanto os sprites não entrarem na câmera**, casa e personagem ficam no
+  lugar antigo e discordam do chão. O `Prism3D.project` existe para isso: ele
+  devolve onde um ponto do mundo cai na tela e quanto vale uma unidade de
+  altura ali, que é o que o Ruby precisa para o personagem continuar sendo
+  cartão 2D, só que colocado pela câmera 3D.
+
+---
+
 ## 2. Mapa do mkxp-z, com arquivo e linha
 
 Fonte lido: `https://github.com/mkxp-z/mkxp-z`, clone raso. Linhas conferidas
