@@ -134,7 +134,21 @@ module PrismTest3D
   # uma fileira de tiles acaba e a outra comeca, entao ou ela cai em cima do
   # corte do desenho, e a camera esta certa, ou ela invade o meio da fileira, e
   # o quanto invadiu e a medida do erro.
-  LINHAS = false
+  LINHAS = true
+
+  # Um pilar fino e alto na celula do jogador, so para responder uma pergunta.
+  #
+  # Toda regua ate aqui era simetrica em torno do centro da tela: a placa sob o
+  # jogador, as linhas de emenda, a grade. E o centro e exatamente onde um
+  # espelhamento vertical nao muda nada, entao nenhuma delas poderia detectar
+  # um. O pilar e assimetrico por construcao: ou ele sobe, e nao ha
+  # espelhamento, ou ele desce, e ha.
+  #
+  # O que motiva a pergunta: com a distancia travada em 14, o modelo da 90,0 px
+  # no topo da tela e 102,9 na base, e o jogo mostrou 103,5 e 90,5. O meio bate
+  # e as pontas saem trocadas. Isso tambem explicaria o laboratorio parecer de
+  # ponta-cabeca, que ate agora ficou sem resposta.
+  PROVA_ALTURA = true
   LINHAS_RAIO = 4
   LINHAS_COMPRIMENTO = 20
 
@@ -238,7 +252,15 @@ module PrismTest3D
     Prism3D.start(CHAO_Z, @viewport)
 
     if PERSPECTIVA
-      Prism3D.perspective(PITCH, FOV)
+      # O terceiro argumento e a distancia da camera, e o negativo pede a
+      # automatica, que e `tilesWide / (2 tan(fov/2) x proporcao)`.
+      #
+      # Precisa ser explicito: o padrao do binding e 14.0, entao chamar com
+      # dois argumentos travava a camera a 14 tiles em vez dos 42,2 que a
+      # regra pede, e era isso que deixava tudo tres vezes maior. Medido: as
+      # linhas verticais sairam com 97 px por tile no meio da tela, contra 32,
+      # e 42,2 dividido por 14 da 3,01.
+      Prism3D.perspective(PITCH, FOV, -1.0)
       Prism3D.ground = CHAO
     else
       Prism3D.perspective_off
@@ -367,6 +389,19 @@ module PrismTest3D
         Prism3D.add_box(centro_x + i + 1.0, 0.06, centro_z + 0.5,
                         0.08, 0.04, LINHAS_COMPRIMENTO, 0.0,
                         1.0, 0.3, 0.9)
+      end
+    end
+
+    if PROVA_ALTURA && $game_player
+      base_x = $game_player.real_x / 128.0 + 0.5
+      base_z = $game_player.real_y / 128.0 + 1.5
+
+      # Tres cubos empilhados, do chao para cima, em cores separadas: assim da
+      # para ver a ordem deles, e nao so que existe alguma coisa ali.
+      [[0.5, 1.0, 0.2, 0.2],     # vermelho, o de baixo
+       [1.5, 0.2, 1.0, 0.2],     # verde, o do meio
+       [2.5, 0.2, 0.4, 1.0]].each do |altura, r, g, b|
+        Prism3D.add_box(base_x, altura, base_z, 0.3, 0.9, 0.3, 0.0, r, g, b)
       end
     end
 
