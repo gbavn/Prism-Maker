@@ -25,10 +25,22 @@
 module PrismTest3D
   module_function
 
-  # Abaixo dos sprites do mapa seria o certo, mas no marco 1 a ordenacao entre
-  # 3D e 2D e por z de elemento: o objeto fica inteiro na frente ou inteiro
-  # atras. Por cima e o que deixa ver que esta funcionando.
-  ELEMENT_Z = 5000
+  # O z do elemento sai da borda de baixo da area do objeto no chao, que e a
+  # mesma regra do `screen_z` dos personagens.
+  #
+  # O mundo 2D do Essentials cabe todo numa faixa estreita: o tilemap calcula
+  # `tile.z = y * 32 + prioridade * 32 + 33`, o personagem usa o
+  # `screen_y_ground` dele, e `always_on_top` vale 999. Com o elemento fixo em
+  # 5000, como estava, o objeto 3D ficava acima de tudo para sempre, e coisa
+  # que nunca passa atras de nada nao le como objeto na cena, le como adesivo
+  # colado na tela.
+  #
+  # Ha um elemento so, entao todos os objetos 3D dividem esse z. Para um
+  # laboratorio serve. Varios objetos vao pedir um elemento por objeto.
+  def element_z
+    borda_sul = CELULA_DO_LAB[1] + (LAB_Z_MAX / UNIDADES_POR_CELULA)
+    ((borda_sul - $game_map.display_y / 128.0) * 32 + 32).round
+  end
 
   # Quanto um tile de altura sobe na tela. 1 e a convencao do RPG Maker.
   ALTURA_NA_TELA = 1.0
@@ -58,7 +70,7 @@ module PrismTest3D
   # erra e o diagnostico. Andar mais que o jogador por um fator acusa a escala,
   # e o fator diz quanto. Atrasar so enquanto anda e encaixar ao parar acusa a
   # fase. Errar por um valor fixo acusa a origem.
-  PLACA_DO_JOGADOR = true
+  PLACA_DO_JOGADOR = false
 
   # Linhas finas assentadas nas emendas entre tiles.
   #
@@ -68,7 +80,7 @@ module PrismTest3D
   # uma fileira de tiles acaba e a outra comeca, entao ou ela cai em cima do
   # corte do desenho, e a camera esta certa, ou ela invade o meio da fileira, e
   # o quanto invadiu e a medida do erro.
-  LINHAS = true
+  LINHAS = false
   LINHAS_RAIO = 4
   LINHAS_COMPRIMENTO = 20
 
@@ -77,7 +89,7 @@ module PrismTest3D
   # Com eles a conferencia e aritmetica em vez de olho em pixel: da para
   # calcular onde a placa deveria cair e comparar com o `screen_x` que o proprio
   # Essentials usa para posicionar o sprite do jogador.
-  MEDIR = true
+  MEDIR = false
   MEDIR_A_CADA = 6
 
   # [centro_x, centro_y, centro_z, largura, altura, profundidade, r, g, b]
@@ -120,6 +132,15 @@ module PrismTest3D
   # 7,3 por 5 por 4,4 celulas, que e tamanho de predio de mapa.
   UNIDADES_POR_CELULA = 16.0
 
+  # A caixa do modelo, medida no proprio lab.obj, em unidades do arquivo.
+  #
+  # O Y comeca em 1 e nao em 0, entao plantar o modelo em y zero deixava o
+  # predio 1 unidade no ar, que sao 2 pixels na tela. O LAB_Y_MIN existe para
+  # descontar isso. O LAB_Z_MAX e a borda sul da area que ele ocupa no chao,
+  # e e dela que sai o z do elemento.
+  LAB_Y_MIN = 1.0
+  LAB_Z_MAX = 36.0
+
   # Onde plantar o laboratorio, e quanto gira.
   CELULA_DO_LAB = [12, 6]
   LAB_YAW = 0.0
@@ -153,7 +174,9 @@ module PrismTest3D
 
   def start
     return unless running?
-    Prism3D.start(ELEMENT_Z)
+    # Um z qualquer aqui: o `update` corrige todo quadro, pela borda sul do
+    # objeto no chao. O mapa ainda pode nem existir quando isto roda.
+    Prism3D.start(0)
 
     # Carregar uma vez so: o modelo vive no motor enquanto o jogo viver.
     if @modelo.nil?
@@ -227,6 +250,10 @@ module PrismTest3D
                        $game_map.display_y / 128.0,
                        32.0, ALTURA_NA_TELA)
 
+    # Acompanha a rolagem: o z sai da posicao do objeto na tela, entao ele muda
+    # a cada quadro, do mesmo jeito que o dos personagens muda.
+    Prism3D.z = element_z
+
     medir if MEDIR
 
     radianos = YAW * Math::PI / 180.0
@@ -282,7 +309,11 @@ module PrismTest3D
     end
 
     if @modelo
-      Prism3D.add_model(@modelo, CELULA_DO_LAB[0], 0.0, CELULA_DO_LAB[1],
+      # O y negativo assenta o predio: o Y do arquivo comeca em LAB_Y_MIN e
+      # nao em zero, entao sem isso ele fica flutuando essa sobra.
+      Prism3D.add_model(@modelo, CELULA_DO_LAB[0],
+                        -LAB_Y_MIN / UNIDADES_POR_CELULA,
+                        CELULA_DO_LAB[1],
                         LAB_YAW * Math::PI / 180.0)
     end
 
