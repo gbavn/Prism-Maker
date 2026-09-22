@@ -57,8 +57,24 @@ export async function loadModelFile(
   const loader = new OBJLoader();
   const materialUrl = url.replace(/\.obj$/i, ".mtl");
   try {
-    const materials = await new MTLLoader().loadAsync(materialUrl);
+    const mtl = new MTLLoader();
+    // `Tr` tem duas convencoes em circulacao, e o modelo extraido de jogo usa a
+    // que diz opacidade: ele escreve `d 1` e `Tr 1` para material opaco. O
+    // Three assume a outra, em que `Tr` e transparencia, e lia `Tr 1` como
+    // opacidade zero. O predio inteiro assava invisivel por causa disso, e o
+    // editor mostrava so o contorno.
+    mtl.setMaterialOptions({ invertTrProperty: true });
+    const materials = await mtl.loadAsync(materialUrl);
     materials.preload();
+    // Rede de seguranca para modelo que venha na outra convencao: material
+    // completamente invisivel nunca e intencional num objeto de cenario, e sem
+    // isto ele some sem deixar pista.
+    for (const material of Object.values(materials.materials)) {
+      if (material.opacity === 0) {
+        material.opacity = 1;
+        material.transparent = false;
+      }
+    }
     loader.setMaterials(materials);
   } catch {
     // Sem .mtl ao lado: segue com o material padrao.

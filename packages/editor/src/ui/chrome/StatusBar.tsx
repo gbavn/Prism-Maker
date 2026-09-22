@@ -8,6 +8,8 @@ interface Props {
   hovered: { x: number; y: number } | null;
   height: number | undefined;
   message: string | null;
+  /** A dica muda com o modo: cada um tem gesto proprio. */
+  hint: string;
   zoom: Zoom;
   onZoom: (zoom: Zoom) => void;
   onZoomStep: (direction: 1 | -1) => void;
@@ -22,6 +24,7 @@ export function StatusBar({
   hovered,
   height,
   message,
+  hint,
   zoom,
   onZoom,
   onZoomStep,
@@ -50,7 +53,7 @@ export function StatusBar({
       )}
 
       <span className="ml-auto truncate font-sans text-[11px]">
-        {message ?? "click raises · shift+click lowers · L levels · ctrl+S saves"}
+        {message ?? hint}
       </span>
 
       {/*

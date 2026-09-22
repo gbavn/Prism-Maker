@@ -1,4 +1,4 @@
-import { Boxes, Trash2 } from "lucide-react";
+import { Boxes, RotateCw, Trash2 } from "lucide-react";
 import type { PlacedObject } from "../../scene/buildScene.js";
 import type { ModelEntry } from "../../shared/ipc.js";
 
@@ -22,6 +22,7 @@ interface Props {
   selected: number | null;
   onSelect: (index: number | null) => void;
   onRemove: (index: number) => void;
+  onTurn: (index: number, yaw: number) => void;
 }
 
 const card = "rounded-xl bg-panel/80 p-2 ring-1 ring-white/5";
@@ -34,6 +35,7 @@ export function ObjectPanel({
   selected,
   onSelect,
   onRemove,
+  onTurn,
 }: Props) {
   const byCategory = new Map<string, ModelEntry[]>();
   for (const model of models) {
@@ -107,8 +109,19 @@ export function ObjectPanel({
                 <span className="truncate">{object.name}</span>
                 <span className="ml-1 text-muted">
                   {object.x},{object.y}
+                  {object.yaw ? ` · ${object.yaw}°` : ""}
                 </span>
               </button>
+              {object.model === undefined ? null : (
+                <button
+                  type="button"
+                  onClick={() => onTurn(index, ((object.yaw ?? 0) + 90) % 360)}
+                  title={`Turn (${object.yaw ?? 0}°)`}
+                  className="shrink-0 rounded p-0.5 text-muted opacity-0 hover:text-body group-hover:opacity-100"
+                >
+                  <RotateCw className="h-3.5 w-3.5" strokeWidth={2} />
+                </button>
+              )}
               <button
                 type="button"
                 onClick={() => onRemove(index)}

@@ -389,6 +389,23 @@ async function rehearsePlacing(window: BrowserWindow, spec: string): Promise<voi
     type: "mouseUp", x, y, button: "left", clickCount: 1,
   });
   await wait(3000);
+
+  // Confere que o objeto de fato virou mesh na viewport, e nao so entrou no
+  // rascunho. Objeto sem textura carregada e pulado em silencio, e foi assim
+  // que ele sumiu da tela uma vez sem o ensaio reprovar.
+  const drawn = await window.webContents.executeJavaScript(
+    "document.body.dataset.objects ?? ''",
+  );
+  if (String(drawn).length === 0) {
+    const status = await window.webContents.executeJavaScript(
+      "document.querySelector('#status')?.textContent ?? 'sem status'",
+    );
+    console.error(
+      `o objeto colocado nao apareceu na viewport: ${String(status)}`,
+    );
+    app.exit(1);
+  }
+  console.error(`objetos na viewport: ${String(drawn)}`);
 }
 
 async function captureAndQuit(

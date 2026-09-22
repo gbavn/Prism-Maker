@@ -21,6 +21,7 @@ export interface ViewportHandle {
   setActiveLayer: (layer: number | null) => void;
   setEventMarks: (on: boolean) => void;
   selectEvent: (id: number | null) => void;
+  selectObject: (index: number | null) => void;
   setMode: (mode: ViewMode) => void;
 }
 
@@ -40,12 +41,19 @@ interface Props {
 }
 
 /**
- * Monta as imagens que a viewport precisa para o mapa aberto.
+ * Monta as imagens que a viewport precisa para desenhar uma cena.
  *
  * Os caminhos vem do processo principal e sao servidos pelo protocolo
  * prism-asset, que so alcanca arquivos de dentro do projeto.
+ *
+ * Tileset, autotiles e charsets saem do mapa, que e onde eles moram. Os
+ * objetos saem da **cena**, e nao do mapa: o mapa aberto e o que esta em
+ * disco, congelado na abertura, e um objeto recem colocado existe so no
+ * rascunho. Tirando a lista do mapa, a imagem do objeto novo nunca entrava
+ * aqui, a viewport pulava o objeto por falta de textura, e ele so aparecia
+ * depois de gravar e reabrir.
  */
-function imagesOf(map: OpenedMap): Map<string, string> {
+function imagesOf(map: OpenedMap, scene: BuiltScene): Map<string, string> {
   const sources = new Map<string, string>();
   if (map.graphics.tileset !== null) {
     sources.set("tileset", assetUrl(map.graphics.tileset));
@@ -56,10 +64,21 @@ function imagesOf(map: OpenedMap): Map<string, string> {
   for (const [name, path] of Object.entries(map.graphics.characters)) {
     sources.set(characterKey(name), assetUrl(path));
   }
-  for (const object of map.objects) {
+  for (const object of scene.objects) {
     sources.set(objectKey(object.name), assetUrl(`Graphics/Objects/${object.name}.png`));
   }
   return sources;
+}
+
+/**
+ * Anuncia no documento quais objetos viraram mesh no ultimo desenho.
+ *
+ * O ensaio sem tela nao consegue olhar a cena, e print nao reprova nada
+ * sozinho. Com a lista aqui, conferir que o objeto colocado apareceu vira uma
+ * pergunta ao DOM.
+ */
+function publishObjects(view: View): void {
+  document.body.dataset["objects"] = view.drawnObjects().join(",");
 }
 
 export function Viewport({
@@ -100,7 +119,8 @@ export function Viewport({
   useEffect(() => {
     const view = viewRef.current;
     if (view === null || map === null) return;
-    void view.show(map.scene, { sources: imagesOf(map) }).then(() => {
+    void view.show(map.scene, { sources: imagesOf(map, map.scene) }).then(() => {
+      publishObjects(view);
       document.body.dataset["ready"] = "true";
     });
   }, [map]);
@@ -112,7 +132,9 @@ export function Viewport({
         const view = viewRef.current;
         const current = map;
         if (view === null || current === null) return;
-        void view.show(scene, { sources: imagesOf(current) });
+        void view.show(scene, { sources: imagesOf(current, scene) }).then(() => {
+          publishObjects(view);
+        });
       },
       highlight: (cell) => viewRef.current?.highlight(cell),
       setZoom: (zoom) => viewRef.current?.setZoom(zoom),
@@ -121,6 +143,7 @@ export function Viewport({
       setActiveLayer: (layer) => viewRef.current?.setActiveLayer(layer),
       setEventMarks: (on) => viewRef.current?.setEventMarks(on),
       selectEvent: (id) => viewRef.current?.selectEvent(id),
+      selectObject: (index) => viewRef.current?.selectObject(index),
       setMode: (mode) => viewRef.current?.setMode(mode),
     }),
     [map],

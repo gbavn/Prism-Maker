@@ -281,6 +281,55 @@ export function App() {
     [draft, editObjects],
   );
 
+  /**
+   * Gira o objeto selecionado, em quartos de volta.
+   *
+   * Reassa: a imagem assada e a ancora dependem do giro, e a area no chao
+   * muda junto, porque um predio de 8 por 5 girado em 90 graus passa a ocupar
+   * 5 por 8. Gravar so o angulo deixaria o mapa reservando a area errada.
+   *
+   * Quarto de volta e nao angulo livre: angulo livre pede previa ao vivo para
+   * ser usavel, e isso e outra conversa.
+   */
+  const turnObject = useCallback(
+    (index: number, yaw: number) => {
+      const root = state.project?.root;
+      if (root === undefined || draft === null) return;
+      const item = draft.objects[index];
+      if (item === undefined || item.model === undefined) return;
+
+      void (async () => {
+        try {
+          const loaded = await loadModelFile(item.model as string, { yaw });
+          const baked = bakeLoadedModel(loaded);
+          await window.prism.bakeObject(root, item.name, baked.png);
+          viewport.current?.forgetAsset(
+            assetUrl(`Graphics/Objects/${item.name}.png`),
+          );
+
+          editObjects(
+            draft.objects.map((old, at) =>
+              at === index
+                ? {
+                    ...old,
+                    yaw,
+                    width: loaded.area.width,
+                    depth: loaded.area.depth,
+                    anchorX: baked.anchorX,
+                    anchorY: baked.anchorY,
+                  }
+                : old,
+            ),
+          );
+          setMessage(`turned to ${yaw}°`);
+        } catch (error) {
+          setMessage(error instanceof Error ? error.message : String(error));
+        }
+      })();
+    },
+    [state.project?.root, draft, editObjects],
+  );
+
   const removeObject = useCallback(
     (index: number) => {
       if (draft === null) return;
@@ -490,7 +539,9 @@ export function App() {
     viewport.current?.setGrid(grid);
     viewport.current?.setEventMarks(mode === "events");
     viewport.current?.selectEvent(mode === "events" ? event : null);
-  }, [mode, event, grid, project.revision, state.map]);
+    // O contorno do objeto acompanha a selecao, e some fora do modo Objects.
+    viewport.current?.selectObject(mode === "objects" ? object : null);
+  }, [mode, event, object, grid, project.revision, state.map]);
 
   useEffect(() => {
     function onKey(event: KeyboardEvent): void {
@@ -712,6 +763,7 @@ export function App() {
               selected={object}
               onSelect={setObject}
               onRemove={removeObject}
+              onTurn={turnObject}
             />
           ) : mode === "events" ? (
             <EventPanel
@@ -729,6 +781,15 @@ export function App() {
         </div>
 
         <StatusBar
+          hint={
+            mode === "objects"
+              ? "click places · drag moves · arrows nudge · Delete removes · ctrl+S saves"
+              : mode === "events"
+                ? "click an event to select it"
+                : mode === "terrain"
+                  ? "click raises · shift+click lowers · L levels · ctrl+S saves"
+                  : "drag paints · shift erases · 1 2 3 size the brush · ctrl+S saves"
+          }
           map={state.map}
           hovered={hovered}
           height={height}

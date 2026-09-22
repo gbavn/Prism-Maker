@@ -118,6 +118,16 @@ export interface Viewport {
   setEventMarks(on: boolean): void;
   /** Destaca um evento pelo id, ou nenhum. */
   selectEvent(id: number | null): void;
+  /** Destaca um objeto 3D pelo indice no mapa, ou nenhum. */
+  selectObject(index: number | null): void;
+  /**
+   * Os objetos que de fato viraram mesh no ultimo desenho.
+   *
+   * Existe para o ensaio poder conferir, em vez de confiar no print: objeto
+   * sem textura e pulado em silencio, e foi assim que ele sumiu da viewport
+   * uma vez sem ninguem notar.
+   */
+  drawnObjects(): readonly string[];
   setMode(mode: ViewMode): void;
   resize(): void;
   dispose(): void;
@@ -185,6 +195,9 @@ function outlineGeometry(thickness: number, thicknessY = thickness): BufferGeome
   return geometry;
 }
 
+/** Grossura da borda do contorno de objeto, em celulas. */
+const RING_THICKNESS = 0.12;
+
 export function createViewport(canvas: HTMLCanvasElement): Viewport {
   const renderer = new WebGLRenderer({
     canvas,
@@ -241,6 +254,8 @@ export function createViewport(canvas: HTMLCanvasElement): Viewport {
   const marks: { mesh: Mesh; id: number }[] = [];
   let marksOn = false;
   let selected: number | null = null;
+  /** Indice do objeto 3D destacado, na ordem em que o mapa guarda. */
+  let selectedObject: number | null = null;
 
   /**
    * A grade de celulas.
@@ -331,6 +346,31 @@ export function createViewport(canvas: HTMLCanvasElement): Viewport {
   ring.renderOrder = 11;
   ring.visible = false;
   scene.add(ring);
+
+  /**
+   * O contorno do objeto 3D selecionado.
+   *
+   * Separado do anel de evento porque o tamanho e outro: evento ocupa uma
+   * celula sempre, e objeto ocupa a area que ele reservou no chao. Acento
+   * violeta, que e a cor de selecao do editor.
+   *
+   * Sem ele, arrastar um objeto e as cegas ate soltar: a lista do painel
+   * destaca, mas quem esta arrastando olha o mapa.
+   */
+  const objectRing = new Mesh(
+    outlineGeometry(RING_THICKNESS),
+    new MeshBasicMaterial({
+      color: 0xa78bfa,
+      transparent: true,
+      opacity: 0.95,
+      depthTest: false,
+      side: DoubleSide,
+    }),
+  );
+  objectRing.rotation.x = -Math.PI / 2;
+  objectRing.renderOrder = 12;
+  objectRing.visible = false;
+  scene.add(objectRing);
 
   /** Remove as malhas e os sprites. As texturas ficam no cache, vivas. */
   function clear(): void {
@@ -739,6 +779,51 @@ export function createViewport(canvas: HTMLCanvasElement): Viewport {
         );
       }
     }
+
+    paintObjectRing(target);
+  }
+
+  /**
+   * Poe o contorno em volta da area do objeto selecionado.
+   *
+   * A area vem do dado, e nao do tamanho da imagem: a imagem tem margem para a
+   * sombra caber e e maior que o chao que o objeto ocupa. Contornar a imagem
+   * mostraria uma area que o mapa nao reservou.
+   */
+  function paintObjectRing(target: BuiltScene): void {
+    const entry =
+      selectedObject === null ? undefined : target.objects[selectedObject];
+    if (entry === undefined) {
+      objectRing.visible = false;
+      return;
+    }
+
+    const tile = target.tileSize;
+    // A espessura e refeita a cada selecao porque ela escala junto com a
+    // area: contorno de 0,12 esticado por oito celulas vira uma faixa de quase
+    // uma celula de largura, que tapa o objeto em vez de marcar. Dividindo pela
+    // area, a borda sai com a mesma grossura em objeto grande e pequeno.
+    objectRing.geometry.dispose();
+    objectRing.geometry = outlineGeometry(
+      RING_THICKNESS / entry.width,
+      RING_THICKNESS / entry.depth,
+    );
+    objectRing.scale.set(entry.width * tile, entry.depth * tile, 1);
+    objectRing.position.set(
+      entry.centreX + (entry.width * tile) / 2,
+      entry.base + LAYER_GAP * 7,
+      entry.footZ - (entry.depth * tile) / 2,
+    );
+    objectRing.visible = true;
+  }
+
+  function drawnObjects(): readonly string[] {
+    return placed.map((entry) => entry.object.name);
+  }
+
+  function selectObject(index: number | null): void {
+    selectedObject = index;
+    if (built !== null) paintObjectRing(built);
   }
 
   /**
@@ -1072,6 +1157,8 @@ export function createViewport(canvas: HTMLCanvasElement): Viewport {
     setActiveLayer,
     setEventMarks,
     selectEvent,
+    selectObject,
+    drawnObjects,
     setMode,
     resize,
     dispose(): void {

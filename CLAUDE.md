@@ -194,6 +194,18 @@ Armadilhas já pagas na viewport, todas descobertas rodando o app:
 - marca de evento é contorno, não preenchimento: o sprite de uma porta é opaco
   e do tamanho da célula, e retângulo cheio esconde justamente o que a marca
   aponta. Tapete por baixo também não serve, pelo mesmo motivo;
+- a lista de imagens que a viewport carrega sai da **cena**, não do mapa em
+  disco. Objeto recém colocado existe só no rascunho, e tirando a lista do mapa
+  a imagem dele nunca entrava: sem textura, a viewport pula o objeto em
+  silêncio e ele só aparece depois de gravar e reabrir;
+- `Tr` no `.mtl` tem duas convenções, e modelo extraído de jogo usa a que diz
+  opacidade: escreve `d 1` e `Tr 1` para material opaco. O `MTLLoader` do Three
+  assume a outra, em que `Tr` é transparência, então lia `Tr 1` como opacidade
+  zero e o prédio inteiro assava invisível. `setMaterialOptions({
+  invertTrProperty: true })` resolve;
+- contorno de seleção escala junto com a área do objeto, então a espessura
+  precisa ser dividida pela área, senão a borda de um prédio de oito células
+  sai com quase uma célula de largura e tapa o que deveria marcar;
 - ao **pintar**, aí sim a vizinhança importa: a forma é recalculada pela
   tabela `NEIGHBORS_TO_AUTOTILE_INDEX`, também do Essentials. A comparação é
   por família de autotile, não por tile id exato, senão cada célula se acharia
