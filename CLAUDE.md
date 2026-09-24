@@ -284,6 +284,16 @@ Três coisas dessa etapa que valem saber sem abrir o documento:
 - **o `mkxp.json` do Essentials do repositório ganhou `fontHeightReporting: 1`**,
   e sem essa linha o texto do jogo sai cortado pela metade no nosso motor. O
   porquê está na seção 1.2 do documento;
+- **o jogo grava o próprio print, e a régua em número.** F7 salva
+  `Prism/Shots/<data-hora>.png` mais um `.txt` com o espaçamento das fileiras,
+  e `PRISM_SHOT_FRAMES=<n>` faz isso sozinho. F8 é do kit e F9 abre o menu de
+  debug, por isso F7. O `.txt` existe porque toda régua anterior era simétrica
+  em volta do centro da tela, que é exatamente onde um espelhamento vertical
+  não muda nada;
+- **a faixa espelhada nas laterais não era a câmera**: o plano de chão passa do
+  quadro capturado e a textura é `GL_CLAMP_TO_EDGE`, então a borda se repete
+  para fora. A sobra agora é botão do Ruby, `Prism3D.ground_overshoot`, e a
+  lateral foi a zero;
 - **para diagnosticar crash no Windows, log normal não serve.** O executável é
   do subsistema gráfico, então redirecionamento de cmd, console de debug e
   `freopen` em `stderr` saem todos vazios. O que funciona é rastro com

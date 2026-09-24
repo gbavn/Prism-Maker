@@ -156,6 +156,40 @@ module PrismTest3D
   LINHAS_RAIO = 4
   LINHAS_COMPRIMENTO = 20
 
+  # Print e regua em numero, gravados pelo proprio jogo.
+  #
+  # O Essentials ja tem F8, que grava o PNG na pasta de saves do motor. Este e
+  # outro proposito: cai dentro do projeto, em Prism/Shots, e ao lado do PNG vai
+  # um .txt com a regua em numero. Print responde "parece certo", numero
+  # responde "esta certo", e e a segunda pergunta que ficou meses sem resposta
+  # aqui: toda regua anterior era simetrica em volta do centro da tela, que e
+  # exatamente onde um espelhamento vertical nao muda nada.
+  #
+  # F7 porque F8 ja e do kit e F9 abre o menu de debug do mapa.
+  PRINT = true
+  PRINT_TECLA = Input::F7
+  PRINT_PASTA = "Prism/Shots"
+  PRINT_RAIO = 6
+
+  # Quadros ate o print automatico, lidos do ambiente. Serve para abrir o jogo
+  # e ir embora: PRISM_SHOT_FRAMES=180 grava tres segundos depois do mapa.
+  PRINT_AUTOMATICO = (ENV["PRISM_SHOT_FRAMES"] || "0").to_i
+
+  # Quanto o plano de chao passa do quadro capturado, em fracao da tela.
+  #
+  # A sobra existe porque o chao inclinado encurta na projecao e deixa faixa
+  # vazia no horizonte. O preco e que fora do quadro a textura fica grampeada
+  # na borda (`GL_CLAMP_TO_EDGE`), entao a ultima fileira de pixels se repete
+  # para fora, e sobre agua isso le como reflexo, que foi o que apareceu no
+  # jogo.
+  #
+  # A lateral vai a zero: a faixa vazia que a sobra conserta e em cima e
+  # embaixo, entao o valor em X pagava o defeito sem comprar nada. O que sobra
+  # em X sao cunhas vazias nos cantos de baixo, e o conserto de verdade delas e
+  # desenhar o mapa mais largo que a tela, que e outro passo.
+  SOBRA_X = 0.0
+  SOBRA_Z = 0.15
+
   # Numeros em disco, uma linha a cada tantos quadros.
   #
   # Com eles a conferencia e aritmetica em vez de olho em pixel: da para
@@ -246,13 +280,15 @@ module PrismTest3D
       # O terceiro argumento e a distancia da camera, e o negativo pede a
       # automatica, que e `tilesWide / (2 tan(fov/2) x proporcao)`.
       #
-      # Precisa ser explicito: o padrao do binding e 14.0, entao chamar com
-      # dois argumentos travava a camera a 14 tiles em vez dos 42,2 que a
-      # regra pede, e era isso que deixava tudo tres vezes maior. Medido: as
-      # linhas verticais sairam com 97 px por tile no meio da tela, contra 32,
-      # e 42,2 dividido por 14 da 3,01.
+      # O padrao do binding era 14.0, e chamar com dois argumentos travava a
+      # camera a 14 tiles em vez dos 42,2 que a regra pede, o que deixava tudo
+      # tres vezes maior. Medido: as linhas verticais sairam com 97 px por tile
+      # no meio da tela, contra 32, e 42,2 dividido por 14 da 3,01. O padrao ja
+      # foi para zero no motor, e o valor continua explicito aqui porque a
+      # armadilha so some de verdade quando o jogo roda com o motor novo.
       Prism3D.perspective(PITCH, FOV, -1.0)
       Prism3D.ground = CHAO
+      Prism3D.ground_overshoot(SOBRA_X, SOBRA_Z)
     else
       Prism3D.perspective_off
       Prism3D.ground = false
@@ -363,6 +399,49 @@ module PrismTest3D
     # Medir nunca pode derrubar o ensaio.
   end
 
+  # A regua da camera em numero, uma linha por fileira do mapa.
+  #
+  # `px_por_tile` e o passo em Y tem que CRESCER de cima para baixo: o rodape
+  # da tela esta mais perto da camera que o topo. Se encolherem, a projecao
+  # esta espelhada na vertical, e e isso que explicaria o laboratorio de ponta
+  # cabeca. A medida sai da mesma `fileira` que posiciona os sprites, entao ela
+  # nao e uma segunda implementacao que poderia estar certa sozinha.
+  def regua_em_numero
+    linhas = [format("# pitch %.2f  fov %.2f  display %.3f,%.3f  mapa %d",
+                     PITCH, FOV,
+                     $game_map.display_x / 128.0, $game_map.display_y / 128.0,
+                     $game_map.map_id),
+              "# fileira   y_na_tela   px_por_tile   passo_y"]
+
+    centro = $game_player ? $game_player.y : 0
+    anterior = nil
+    (-PRINT_RAIO..PRINT_RAIO).each do |i|
+      z = centro + i + 1.0
+      d = fileira(z)
+      next if d.nil?
+
+      passo = anterior.nil? ? 0.0 : d[2] - anterior
+      anterior = d[2]
+      linhas << format("%9.1f %11.2f %13.3f %9.2f", z, d[2], d[1], passo)
+    end
+
+    linhas.join("\r\n") + "\r\n"
+  end
+
+  # Grava o print e a regua lado a lado, com o mesmo carimbo de hora.
+  #
+  # Dentro do projeto de proposito, e nao na pasta de saves do motor: assim o
+  # arquivo cai na arvore do repositorio, que e onde quem esta desenvolvendo
+  # consegue ler sem procurar.
+  def gravar_print
+    Dir.create(PRINT_PASTA)
+    base = File.join(PRINT_PASTA, Time.now.strftime("%Y-%m-%d_%H-%M-%S"))
+    Graphics.screenshot(base + ".png")
+    File.open(base + ".txt", "wb") { |f| f.write(regua_em_numero) }
+  rescue StandardError
+    # Print nunca pode derrubar o jogo.
+  end
+
   def update
     return unless running?
     return unless $game_map
@@ -385,6 +464,15 @@ module PrismTest3D
     end
 
     medir if MEDIR
+
+    if PRINT
+      @quadros_vividos = (@quadros_vividos || 0) + 1
+      if Input.trigger?(PRINT_TECLA)
+        gravar_print
+      elsif PRINT_AUTOMATICO > 0 && @quadros_vividos == PRINT_AUTOMATICO
+        gravar_print
+      end
+    end
 
     radianos = YAW * Math::PI / 180.0
     Prism3D.clear
@@ -426,15 +514,20 @@ module PrismTest3D
     end
 
     if PROVA_ALTURA && $game_player
-      base_x = $game_player.real_x / 128.0 + 0.5
-      base_z = $game_player.real_y / 128.0 + 1.5
+      # Duas celulas a leste do jogador, e nao em cima dele: os tres cubos de
+      # 0,3 celula que estavam aqui ficavam atras do sprite e nao apareciam no
+      # print, que e o motivo de a pergunta ter passado um ensaio inteiro sem
+      # resposta. Grosso, alto e fora do caminho.
+      base_x = $game_player.real_x / 128.0 + 2.5
+      base_z = $game_player.real_y / 128.0 + 1.0
 
-      # Tres cubos empilhados, do chao para cima, em cores separadas: assim da
-      # para ver a ordem deles, e nao so que existe alguma coisa ali.
-      [[0.5, 1.0, 0.2, 0.2],     # vermelho, o de baixo
-       [1.5, 0.2, 1.0, 0.2],     # verde, o do meio
-       [2.5, 0.2, 0.4, 1.0]].each do |altura, r, g, b|
-        Prism3D.add_box(base_x, altura, base_z, 0.3, 0.9, 0.3, 0.0, r, g, b)
+      # Do chao para cima, vermelho embaixo e azul em cima. Se o azul sair
+      # embaixo no print, o espelhamento vertical esta confirmado em uma olhada.
+      [[0.5, 1.0, 0.15, 0.15],
+       [1.5, 1.0, 0.65, 0.15],
+       [2.5, 0.2, 0.9, 0.3],
+       [3.5, 0.15, 0.35, 1.0]].each do |altura, r, g, b|
+        Prism3D.add_box(base_x, altura, base_z, 0.8, 1.0, 0.8, 0.0, r, g, b)
       end
     end
 
@@ -603,10 +696,23 @@ class Sprite_Character < RPG::Sprite
 
     PrismTest3D.sincronizar
 
-    # O pe do sprite fica na borda de baixo da celula, que e o `screen_y_ground`
-    # do motor: por isso o mais um no Z, e o meio no X.
-    ponto = PrismTest3D.no_chao(@character.real_x / 128.0 + 0.5,
-                                @character.real_y / 128.0 + 1.0)
+    # A posicao do mundo sai da conta que o MOTOR ja fez, e nao do `real_x` cru.
+    #
+    # `screen_x` e `screen_y_ground` medem contra `self.map.display_x`, o mapa
+    # DO PROPRIO personagem (`Game_Character`, no Scripts.rxdata). Com o
+    # `$map_factory` os mapas conectados ficam vivos ao mesmo tempo, cada um com
+    # a sua rolagem, e casar `real_x` cru com a rolagem do mapa atual jogava os
+    # nadadores da rota de baixo la para cima na tela.
+    #
+    # Desfazendo a rolagem do mapa atual, a conta volta para coordenada de
+    # mundo. No mapa atual ela da exatamente o que estava aqui antes,
+    # `real_x / 128 + 0.5` e `real_y / 128 + 1.0`, e ainda herda de graca o
+    # `x_offset` e o personagem que ocupa mais de uma celula, que o calculo
+    # antigo ignorava. O `screen_x` ja vem centrado e o `screen_y_ground` ja vem
+    # no rodape da celula, que sao justamente o meio e o mais um de antes.
+    ponto = PrismTest3D.no_chao(
+      ($game_map.display_x / 128.0) + (@character.screen_x / 32.0),
+      ($game_map.display_y / 128.0) + (@character.screen_y_ground / 32.0))
     return if ponto.nil?
 
     self.x = ponto[0].round

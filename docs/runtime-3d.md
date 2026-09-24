@@ -312,6 +312,45 @@ Preços aceitos, que não são defeito e sim a escolha:
   altura ali, que é o que o Ruby precisa para o personagem continuar sendo
   cartão 2D, só que colocado pela câmera 3D.
 
+## 1.6. O reflexo nas bordas, que não é da câmera
+
+Rodando no jogo apareceu uma faixa nas laterais que sobre água lê como
+reflexo. A causa não é a projeção.
+
+O plano de chão é desenhado passando do quadro capturado, e a textura nasce com
+`TEX::setRepeat(false)`, que é `GL_CLAMP_TO_EDGE` (`src/display/gl/gl-util.h`).
+Fora do intervalo de 0 a 1 o OpenGL repete a última linha e a última coluna de
+pixels, então a sobra não é chão continuando: é o pixel da borda esticado para
+fora da tela.
+
+A sobra existe por um motivo real, que é a faixa vazia no horizonte, mas isso
+vale **em cima e embaixo**. O valor em X pagava o defeito nas laterais sem
+comprar nada, e foi a zero.
+
+Como os dois números não têm resposta certa, eles viraram botão do Ruby,
+`Prism3D.ground_overshoot(x, z)`, e o plugin passa `SOBRA_X` e `SOBRA_Z`.
+Achar o ponto certo passou a ser ensaio em Ruby, e não recompilação.
+
+O conserto definitivo continua o mesmo da lista acima: desenhar o mapa numa
+área maior que a tela.
+
+## 1.7. O jogo grava o próprio print, e a régua em número
+
+F7 dentro do jogo grava `Prism/Shots/<data-hora>.png` mais um `.txt` ao lado.
+F8 é do kit e F9 abre o menu de debug, por isso F7. Com
+`PRISM_SHOT_FRAMES=<n>` no ambiente, ele grava sozinho n quadros depois do
+mapa carregar.
+
+O `.txt` é o que importa. Ele traz, fileira a fileira, o `y` na tela, os
+pixels por tile e o passo em Y, tirados da mesma `fileira` que posiciona os
+sprites. Os dois têm que **crescer** de cima para baixo, porque o rodapé da
+tela está mais perto da câmera. Se encolherem, a projeção está espelhada na
+vertical.
+
+Isso existe porque toda régua anterior era simétrica em volta do centro da
+tela, e o centro é exatamente onde um espelhamento vertical não muda nada:
+nenhuma delas poderia detectar um, por construção.
+
 ---
 
 ## 2. Mapa do mkxp-z, com arquivo e linha
