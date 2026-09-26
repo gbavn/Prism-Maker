@@ -288,7 +288,11 @@ module PrismTest3D
       # armadilha so some de verdade quando o jogo roda com o motor novo.
       Prism3D.perspective(PITCH, FOV, -1.0)
       Prism3D.ground = CHAO
-      Prism3D.ground_overshoot(SOBRA_X, SOBRA_Z)
+      # So no motor novo: com o executavel antigo o metodo nao existe, e sem a
+      # pergunta o erro derrubaria o resto do `start`, que e onde o 3D liga.
+      if Prism3D.respond_to?(:ground_overshoot)
+        Prism3D.ground_overshoot(SOBRA_X, SOBRA_Z)
+      end
     else
       Prism3D.perspective_off
       Prism3D.ground = false
